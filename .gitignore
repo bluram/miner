@@ -1,0 +1,9 @@
+/miner
+bin/
+out/
+.vscode
+.idea
+
+docs/
+ref/
+testdata/

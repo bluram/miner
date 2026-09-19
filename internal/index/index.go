@@ -1,0 +1,113 @@
+// Package index finds candidate repeat positions without comparing
+// everything to everything.
+//
+// Real repeats are not bit-identical: measured on enerji_fm, two airings of
+// the same audio agree on about 89% of bits, and only 29% of frames survive
+// untouched. So a key cannot hash a whole window. It hashes the three most
+// stable rows - the low cepstral coefficients, which err 4-6% of the time
+// against 14% for the highest - sampled across a second.
+//
+// That key survives a repeat about 20% of the time. Entries are stored every
+// Stride frames while lookups probe every frame, so a 10-second repeat offers
+// ~33 chances and is found with ~99.9% probability.
+package index
+
+import (
+	"slices"
+
+	"miner/internal/fingerprint"
+)
+
+// Key shape. 30 bits over 91 frames, just under a second.
+const (
+	Samples = 10 // frames per key
+	Step    = 10 // frames between them
+	Rows    = 3  // stable rows used, counting from row 0
+	Span    = (Samples-1)*Step + 1
+	KeyBits = Samples * Rows
+)
+
+// Stride is the gap between stored entries. Lookups probe every frame, so
+// only one side of a repeat needs to land on a stride boundary.
+const Stride = 32
+
+// MaxBucket caps how many candidates one key may return. Silence and dead
+// air collapse onto a handful of keys; without a cap those buckets would
+// dominate the run.
+const MaxBucket = 64
+
+// Index maps keys to timeline positions. Entries are key<<32|pos in one
+// sorted slice: 8 bytes each, no map overhead, and equal keys end up
+// adjacent.
+type Index struct {
+	entries []uint64
+	n       int
+}
+
+// Key computes the key at pos, reporting false if it is degenerate.
+// An all-zero key means silence, which matches everything and means nothing.
+func Key(frames []uint16, pos int) (uint32, bool) {
+	if pos < 0 || pos+Span > len(frames) {
+		return 0, false
+	}
+	var k uint32
+	for s := 0; s < Samples; s++ {
+		f := frames[pos+s*Step]
+		for r := 0; r < Rows; r++ {
+			k = k<<1 | uint32((f>>(fingerprint.Rows-1-r))&1)
+		}
+	}
+	return k, k != 0
+}
+
+// Build indexes every Stride-th position.
+func Build(frames []uint16) *Index {
+	last := len(frames) - Span
+	if last < 0 {
+		return &Index{n: len(frames)}
+	}
+	ix := &Index{
+		entries: make([]uint64, 0, last/Stride+1),
+		n:       len(frames),
+	}
+	for pos := 0; pos <= last; pos += Stride {
+		if k, ok := Key(frames, pos); ok {
+			ix.entries = append(ix.entries, uint64(k)<<32|uint64(uint32(pos)))
+		}
+	}
+	slices.Sort(ix.entries)
+	return ix
+}
+
+// Len is the number of stored entries.
+func (ix *Index) Len() int { return len(ix.entries) }
+
+// Bytes is the index's memory footprint.
+func (ix *Index) Bytes() int { return len(ix.entries) * 8 }
+
+// Lookup appends the positions stored under the key at pos to dst and returns
+// it. Buckets longer than MaxBucket are dropped rather than truncated: a key
+// that common carries no information.
+func (ix *Index) Lookup(frames []uint16, pos int, dst []int) []int {
+	k, ok := Key(frames, pos)
+	if !ok {
+		return dst
+	}
+	return ix.lookupKey(k, dst)
+}
+
+func (ix *Index) lookupKey(k uint32, dst []int) []int {
+	lo := uint64(k) << 32
+	i, _ := slices.BinarySearch(ix.entries, lo)
+	j := i
+	for j < len(ix.entries) && uint32(ix.entries[j]>>32) == k {
+		j++
+	}
+	if j-i > MaxBucket {
+		return dst
+	}
+	for ; i < j; i++ {
+		dst = append(dst, int(uint32(ix.entries[i])))
+	}
+	return dst
+}

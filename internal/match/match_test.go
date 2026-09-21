@@ -170,3 +170,85 @@ func TestRealShiftBreaksMatch(t *testing.T) {
 		t.Errorf("one-second shift still scored %.3f", got)
 	}
 }
+
+func TestExtendGrowsBothWays(t *testing.T) {
+	step := framesPerSecond
+	n := step * 60
+	r := rand.New(rand.NewSource(9))
+	fr := make([]uint16, n)
+	for i := range fr {
+		fr[i] = uint16(r.Intn(4095) + 1)
+	}
+	// Frames 10s-30s are duplicated at 35s-55s.
+	const fromSec, toSec, lenSec = 10, 35, 20
+	copy(fr[toSec*step:], fr[fromSec*step:(fromSec+lenSec)*step])
+
+	// Seed in the middle of the copied region.
+	a := (fromSec + 5) * step
+	b := (toSec + 5) * step
+	lo, length := Extend(fr, a, b, 10*step, step, 120*step, Threshold)
+
+	if lo > fromSec*step+step || lo < fromSec*step-step {
+		t.Errorf("start = %d, want near %d", lo, fromSec*step)
+	}
+	if want := lenSec * step; length < want-2*step || length > want+2*step {
+		t.Errorf("length = %d, want near %d", length, want)
+	}
+}
+
+func TestExtendRespectsMaxLen(t *testing.T) {
+	step := framesPerSecond
+	fr := make([]uint16, step*200)
+	for i := range fr {
+		fr[i] = 0xE0F // identical everywhere, so it would grow forever
+	}
+	maxLen := 30 * step
+	_, length := Extend(fr, 0, step*100, 10*step, step, maxLen, Threshold)
+	if length > maxLen {
+		t.Errorf("length = %d, exceeds maxLen %d", length, maxLen)
+	}
+}
+
+func TestExtendRejectsBadInput(t *testing.T) {
+	fr := make([]uint16, 1000)
+	for _, tc := range [][3]int{{-1, 0, 10}, {0, -1, 10}, {0, 0, 0}, {0, 990, 100}} {
+		if _, n := Extend(fr, tc[0], tc[1], tc[2], 10, 1000, Threshold); n != 0 {
+			t.Errorf("Extend(%v) returned length %d, want 0", tc, n)
+		}
+	}
+}
+
+func TestExtendStopsAtMismatch(t *testing.T) {
+	step := framesPerSecond
+	r := rand.New(rand.NewSource(12))
+	fr := make([]uint16, step*100)
+	for i := range fr {
+		fr[i] = uint16(r.Intn(4095) + 1)
+	}
+	// A 15s copy and nothing beyond it.
+	copy(fr[50*step:], fr[10*step:25*step])
+	_, length := Extend(fr, 10*step, 50*step, 10*step, step, 120*step, Threshold)
+	if length > 17*step {
+		t.Errorf("length = %d frames (%ds), ran past the copied region", length, length/step)
+	}
+}
+
+// One bad window inside a genuine repeat must not truncate it.
+func TestExtendToleratesOneBadWindow(t *testing.T) {
+	step := framesPerSecond
+	r := rand.New(rand.NewSource(21))
+	fr := make([]uint16, step*100)
+	for i := range fr {
+		fr[i] = uint16(r.Intn(4095) + 1)
+	}
+	const from, to, length = 10, 50, 25
+	copy(fr[to*step:], fr[from*step:(from+length)*step])
+	// Wreck one second at +18s into the copy.
+	for i := (to + 18) * step; i < (to+19)*step; i++ {
+		fr[i] = ^fr[i] & 0xFFF
+	}
+	_, got := Extend(fr, from*step, to*step, 10*step, step, 120*step, Threshold)
+	if got < 22*step {
+		t.Errorf("length = %ds, stopped at the damaged second instead of continuing", got/step)
+	}
+}

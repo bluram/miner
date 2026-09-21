@@ -32,19 +32,19 @@ type Cluster struct {
 	Occurrences []Occurrence
 }
 
-// Len is the representative length, taken as the shortest occurrence so the
-// fragment is not padded with a neighbour.
+// Len is the representative length: the median occurrence. The shortest
+// would collapse to the verification floor, since in a large cluster some
+// occurrence is always barely over it.
 func (c Cluster) Len() int {
 	if len(c.Occurrences) == 0 {
 		return 0
 	}
-	n := c.Occurrences[0].Len
-	for _, o := range c.Occurrences[1:] {
-		if o.Len < n {
-			n = o.Len
-		}
+	lens := make([]int, len(c.Occurrences))
+	for i, o := range c.Occurrences {
+		lens[i] = o.Len
 	}
-	return n
+	sort.Ints(lens)
+	return lens[len(lens)/2]
 }
 
 // Collector streams hits into pairs. Hits must arrive with non-decreasing pos.
@@ -117,56 +117,100 @@ func (c *Collector) Pairs() []Pair {
 
 // Group merges pairs into clusters.
 //
-// Each pair contributes two intervals. Intervals overlapping by at least
-// minOverlap of the shorter one are the same airing and collapse into one
-// occurrence; the pair then links the two occurrences it joined, and a
-// cluster is a connected component of those links.
+// Each pair contributes two intervals. Different pairs find the same airing
+// at slightly different starts, so intervals are grouped by overlap rather
+// than by start: an interval joins an airing when it covers at least
+// minOverlap of the longer of the two.
+//
+// The comparison is always against the airing's first interval and never
+// against a growing extent. Growing it lets a chain of neighbours creep
+// across the timeline and weld unrelated fragments together.
 func Group(pairs []Pair, minOverlap float64) []Cluster {
 	if len(pairs) == 0 {
 		return nil
 	}
 
-	iv := make([]Occurrence, 0, len(pairs)*2)
-	for _, p := range pairs {
-		iv = append(iv, Occurrence{p.A, p.Len}, Occurrence{p.B, p.Len})
+	type item struct {
+		start, length, pair int
+		side                int // 0 = A, 1 = B
 	}
-	sort.Slice(iv, func(i, j int) bool {
-		if iv[i].Start != iv[j].Start {
-			return iv[i].Start < iv[j].Start
+	items := make([]item, 0, len(pairs)*2)
+	for i, p := range pairs {
+		items = append(items,
+			item{p.A, p.Len, i, 0},
+			item{p.B, p.Len, i, 1})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].start != items[j].start {
+			return items[i].start < items[j].start
 		}
-		return iv[i].Len < iv[j].Len
+		if items[i].length != items[j].length {
+			return items[i].length < items[j].length
+		}
+		if items[i].pair != items[j].pair {
+			return items[i].pair < items[j].pair
+		}
+		return items[i].side < items[j].side
 	})
 
-	merged := make([]Occurrence, 0, len(iv))
-	for _, o := range iv {
-		if n := len(merged); n > 0 && overlaps(merged[n-1], o, minOverlap) {
-			merged[n-1] = union(merged[n-1], o)
-			continue
+	// Sweep into airings, anchored on each airing's first interval.
+	airing := make([]int, len(items))
+	var anchors []int
+	var lens [][]int
+	cur := -1
+	var anchor Occurrence
+	for i, it := range items {
+		o := Occurrence{it.start, it.length}
+		if cur < 0 || !sameAiring(anchor, o, minOverlap) {
+			cur++
+			anchor = o
+			anchors = append(anchors, o.Start)
+			lens = append(lens, nil)
 		}
-		merged = append(merged, o)
+		airing[i] = cur
+		lens[cur] = append(lens[cur], it.length)
 	}
 
-	uf := newUF(len(merged))
-	for _, p := range pairs {
-		a := find(merged, p.A, p.Len)
-		b := find(merged, p.B, p.Len)
-		if a >= 0 && b >= 0 {
-			uf.join(a, b)
+	// Which airing each side of each pair landed in.
+	sideAiring := make([][2]int, len(pairs))
+	for i := range sideAiring {
+		sideAiring[i] = [2]int{-1, -1}
+	}
+	for i, it := range items {
+		sideAiring[it.pair][it.side] = airing[i]
+	}
+
+	uf := newUF(len(anchors))
+	for _, sa := range sideAiring {
+		if sa[0] >= 0 && sa[1] >= 0 && sa[0] != sa[1] {
+			uf.join(sa[0], sa[1])
 		}
+	}
+
+	occOf := func(a int) Occurrence {
+		l := append([]int(nil), lens[a]...)
+		sort.Ints(l)
+		return Occurrence{anchors[a], l[len(l)/2]}
 	}
 
 	byRoot := map[int][]Occurrence{}
-	for i, o := range merged {
-		r := uf.root(i)
-		byRoot[r] = append(byRoot[r], o)
+	for a := range anchors {
+		r := uf.root(a)
+		byRoot[r] = append(byRoot[r], occOf(a))
 	}
 
 	out := make([]Cluster, 0, len(byRoot))
 	for _, occ := range byRoot {
+		sort.Slice(occ, func(i, j int) bool {
+			if occ[i].Start != occ[j].Start {
+				return occ[i].Start < occ[j].Start
+			}
+			return occ[i].Len < occ[j].Len
+		})
+		occ = disjoint(occ)
 		if len(occ) < 2 {
-			continue // a fragment seen once is not a repeat
+			continue // seen once is not a repeat
 		}
-		sort.Slice(occ, func(i, j int) bool { return occ[i].Start < occ[j].Start })
 		out = append(out, Cluster{Occurrences: occ})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -178,34 +222,35 @@ func Group(pairs []Pair, minOverlap float64) []Cluster {
 	return out
 }
 
-// overlaps reports whether two intervals cover the same airing.
-func overlaps(a, b Occurrence, minOverlap float64) bool {
-	lo, hi := max(a.Start, b.Start), min(a.End(), b.End())
-	if hi <= lo {
-		return false
-	}
-	shorter := min(a.Len, b.Len)
-	if shorter == 0 {
-		return false
-	}
-	return float64(hi-lo)/float64(shorter) >= minOverlap
-}
-
-func union(a, b Occurrence) Occurrence {
-	s := min(a.Start, b.Start)
-	e := max(a.End(), b.End())
-	return Occurrence{s, e - s}
-}
-
-// find locates the merged occurrence holding an interval.
-func find(merged []Occurrence, start, length int) int {
-	i := sort.Search(len(merged), func(i int) bool { return merged[i].End() > start })
-	for ; i < len(merged) && merged[i].Start < start+length; i++ {
-		if merged[i].Start <= start && merged[i].End() >= start+length {
-			return i
+// disjoint keeps the occurrences that do not overlap each other. An airing
+// cannot overlap itself, so overlapping entries are the same airing seen
+// again - or a self-similar stretch such as a looping music bed, where only
+// one position per loop is a real occurrence. Input must be sorted by start.
+func disjoint(occ []Occurrence) []Occurrence {
+	out := occ[:0]
+	end := 0
+	for i, o := range occ {
+		if i > 0 && o.Start < end {
+			continue
 		}
+		out = append(out, o)
+		end = o.End()
 	}
-	return -1
+	return out
+}
+
+// sameAiring reports whether b is the same airing as anchor. Items arrive
+// sorted by start, so anchor starts no later than b.
+func sameAiring(anchor, b Occurrence, minOverlap float64) bool {
+	ov := min(anchor.End(), b.End()) - b.Start
+	if ov <= 0 {
+		return false
+	}
+	longer := max(anchor.Len, b.Len)
+	if longer == 0 {
+		return false
+	}
+	return float64(ov)/float64(longer) >= minOverlap
 }
 
 type uf struct{ p []int }

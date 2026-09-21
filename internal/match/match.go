@@ -88,3 +88,54 @@ func RateAt(frames []uint16, i, j, n int) float64 {
 	}
 	return Rate(frames[i:i+n], frames[j:j+n])
 }
+
+// Patience is how many consecutive failing windows Extend tolerates before
+// it stops. A single window can dip below threshold inside a genuine repeat,
+// and stopping there truncates the fragment.
+const Patience = 3
+
+// Extend grows a verified seed to the longest aligned region around it.
+//
+// Index hits are sparse, so the span of hits on a diagonal understates the
+// real fragment. Rather than infer length from hit density, walk outwards in
+// step-sized windows while they still match, and keep the furthest window
+// that passed.
+//
+// a and b are the aligned starts, seed the verified length. Returns the start
+// on the a side and the length, capped at maxLen.
+func Extend(frames []uint16, a, b, seed, step, maxLen int, threshold float64) (int, int) {
+	if a < 0 || b < 0 || seed <= 0 || step <= 0 || a+seed > len(frames) || b+seed > len(frames) {
+		return a, 0
+	}
+	d := b - a
+	lo, hi := a, a+seed
+	bestLo, bestHi := lo, hi
+
+	for miss := 0; miss < Patience; {
+		if hi+step > len(frames) || hi+d+step > len(frames) || hi+step-bestLo > maxLen {
+			break
+		}
+		if Rate(frames[hi:hi+step], frames[hi+d:hi+d+step]) > threshold {
+			hi += step
+			bestHi = hi
+			miss = 0
+			continue
+		}
+		hi += step
+		miss++
+	}
+	for miss := 0; miss < Patience; {
+		if lo-step < 0 || lo+d-step < 0 || bestHi-(lo-step) > maxLen {
+			break
+		}
+		if Rate(frames[lo-step:lo], frames[lo+d-step:lo+d]) > threshold {
+			lo -= step
+			bestLo = lo
+			miss = 0
+			continue
+		}
+		lo -= step
+		miss++
+	}
+	return bestLo, bestHi - bestLo
+}

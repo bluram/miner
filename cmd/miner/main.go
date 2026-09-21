@@ -11,6 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"miner"
@@ -68,7 +71,7 @@ func run() error {
 		return err
 	}
 	if *cut != "" {
-		if err := cutRepresentatives(res, *cut, rep); err != nil {
+		if err := cutRepresentatives(res, *cut, *workers, rep); err != nil {
 			return err
 		}
 	}
@@ -137,29 +140,72 @@ func write(res *miner.Result, path string) error {
 
 // cutRepresentatives writes one mp3 per cluster, so the sample can be heard.
 // The .bin files sit beside the mp3 they were made from.
-func cutRepresentatives(res *miner.Result, dir string, rep *progress.Reporter) error {
+//
+// ffmpeg spends most of its time decoding, so the cuts run concurrently; one
+// at a time made a few hundred clusters take minutes.
+func cutRepresentatives(res *miner.Result, dir string, workers int, rep *progress.Reporter) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	if workers < 1 {
+		workers = runtime.NumCPU()
+	}
+
+	var (
+		wg       sync.WaitGroup
+		sem      = make(chan struct{}, workers)
+		done     atomic.Int64
+		mu       sync.Mutex
+		firstErr error
+	)
+	fail := func(err error) {
+		mu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		mu.Unlock()
+	}
+	failed := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return firstErr != nil
+	}
+
 	for i := range res.Clusters {
-		rep.Update("cut", i, len(res.Clusters))
-		c := &res.Clusters[i]
-		r := c.Representative()
-		src := trimBin(r.File)
-		if _, err := os.Stat(src); err != nil {
-			return fmt.Errorf("cut cluster %d: %w", c.ID, err)
+		if failed() {
+			break
 		}
-		dst := filepath.Join(dir, fmt.Sprintf("cluster-%04d.mp3", c.ID))
-		ctx, cancel := commandTimeout()
-		cmd := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-y",
-			"-ss", fmt.Sprintf("%.3f", r.OffsetSec),
-			"-t", fmt.Sprintf("%.3f", c.DurationSec),
-			"-i", src, dst)
-		err := cmd.Run()
-		cancel()
-		if err != nil {
-			return fmt.Errorf("cut cluster %d: %w", c.ID, err)
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(c *miner.Cluster) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := cutOne(c, dir); err != nil {
+				fail(err)
+			}
+			rep.Update("cut", int(done.Add(1)), len(res.Clusters))
+		}(&res.Clusters[i])
+	}
+	wg.Wait()
+	return firstErr
+}
+
+// cutOne extracts a cluster's representative into dir.
+func cutOne(c *miner.Cluster, dir string) error {
+	r := c.Representative()
+	src := trimBin(r.File)
+	if _, err := os.Stat(src); err != nil {
+		return fmt.Errorf("cut cluster %d: %w", c.ID, err)
+	}
+	dst := filepath.Join(dir, fmt.Sprintf("cluster-%04d.mp3", c.ID))
+	ctx, cancel := commandTimeout()
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-y",
+		"-ss", fmt.Sprintf("%.3f", r.OffsetSec),
+		"-t", fmt.Sprintf("%.3f", c.DurationSec),
+		"-i", src, dst)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("cut cluster %d: %w", c.ID, err)
 	}
 	return nil
 }

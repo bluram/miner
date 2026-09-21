@@ -148,7 +148,9 @@ type Options struct {
 	// safe on small inputs.
 	Same func(a, b Occurrence, shift int) bool
 
-	// Progress, if set, is called as seeds are processed.
+	// Progress, if set, is called as airings are assigned to clusters.
+	// Counting seeds instead would be useless: most are already absorbed by
+	// an earlier cluster and skipped instantly.
 	Progress func(done, total int)
 
 	// Verify re-checks a finished cluster's members against its
@@ -284,14 +286,16 @@ func Group(pairs []Pair, opt Options) []Cluster {
 		off int // alignment relative to the seed
 	}
 	var members []member
-	for oi, seed := range order {
-		if opt.Progress != nil {
-			opt.Progress(oi, len(order))
-		}
+	assigned := 0
+	for _, seed := range order {
 		if taken[seed] || len(adj[seed]) == 0 {
 			continue
 		}
 		taken[seed] = true
+		assigned++
+		if opt.Progress != nil {
+			opt.Progress(assigned, len(order))
+		}
 		members = append(members[:0], member{occ[seed], 0})
 		queue = append(queue[:0], adj[seed]...)
 		for len(queue) > 0 {
@@ -304,6 +308,7 @@ func Group(pairs []Pair, opt Options) []Cluster {
 				continue
 			}
 			taken[e.to] = true
+			assigned++
 			members = append(members, member{occ[e.to], e.off})
 			// Offsets compose along the path from the seed.
 			for _, n := range adj[e.to] {

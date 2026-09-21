@@ -1,6 +1,7 @@
 package miner
 
 import (
+	"miner/internal/cluster"
 	"os"
 	"path/filepath"
 	"sort"
@@ -188,5 +189,128 @@ func TestRepresentativeIsAMember(t *testing.T) {
 		if !found {
 			t.Errorf("cluster %d: representative is not one of its occurrences", c.ID)
 		}
+	}
+}
+
+func TestChunks(t *testing.T) {
+	for _, tc := range []struct {
+		n, w, want int
+	}{
+		{100, 4, 4},
+		{100, 1, 1},
+		{3, 8, 3},
+		{0, 4, 0},
+		{100, 0, 1},
+	} {
+		got := chunks(tc.n, tc.w)
+		if len(got) != tc.want {
+			t.Errorf("chunks(%d,%d) gave %d ranges, want %d", tc.n, tc.w, len(got), tc.want)
+		}
+		// Ranges must tile [0,n) exactly, with no gaps or overlaps.
+		at := 0
+		for _, r := range got {
+			if r[0] != at {
+				t.Fatalf("chunks(%d,%d): range starts at %d, want %d", tc.n, tc.w, r[0], at)
+			}
+			if r[1] <= r[0] {
+				t.Fatalf("chunks(%d,%d): empty range %v", tc.n, tc.w, r)
+			}
+			at = r[1]
+		}
+		if at != tc.n {
+			t.Errorf("chunks(%d,%d) covered %d, want %d", tc.n, tc.w, at, tc.n)
+		}
+	}
+}
+
+// The worker count must not change what is found. Extents can differ by a
+// fraction of a second on a fragment-pair that straddles a chunk boundary,
+// since the two workers seed it at different positions, so the clusters are
+// compared rather than their exact lengths.
+func TestFindWorkerCountDoesNotChangeResult(t *testing.T) {
+	paths := dayPaths(t)[:8]
+	one, err := Find(paths, Options{Workers: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	many, err := Find(paths, Options{Workers: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one.Clusters) != len(many.Clusters) {
+		t.Fatalf("1 worker gave %d clusters, 8 gave %d", len(one.Clusters), len(many.Clusters))
+	}
+	for i := range one.Clusters {
+		a, b := one.Clusters[i], many.Clusters[i]
+		if a.Count != b.Count {
+			t.Errorf("cluster %d: %d airings with one worker, %d with eight", i+1, a.Count, b.Count)
+		}
+		if d := a.DurationSec - b.DurationSec; d > 1 || d < -1 {
+			t.Errorf("cluster %d: %.2fs with one worker, %.2fs with eight", i+1, a.DurationSec, b.DurationSec)
+		}
+		for j := range a.Occurrences {
+			if !a.Occurrences[j].Start.Equal(b.Occurrences[j].Start) {
+				t.Errorf("cluster %d occurrence %d starts differ: %v vs %v",
+					i+1, j, a.Occurrences[j].Start, b.Occurrences[j].Start)
+			}
+		}
+	}
+}
+
+func TestFindParallelIsDeterministic(t *testing.T) {
+	paths := dayPaths(t)[:8]
+	first, err := Find(paths, Options{Workers: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for run := 0; run < 3; run++ {
+		got, err := Find(paths, Options{Workers: 8})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Clusters) != len(first.Clusters) {
+			t.Fatalf("run %d: %d clusters, first had %d", run, len(got.Clusters), len(first.Clusters))
+		}
+		for i := range got.Clusters {
+			a, b := first.Clusters[i], got.Clusters[i]
+			if a.ID != b.ID || a.Count != b.Count || a.DurationSec != b.DurationSec {
+				t.Fatalf("run %d cluster %d differs: %+v vs %+v", run, i+1, a, b)
+			}
+			for j := range a.Occurrences {
+				if a.Occurrences[j] != b.Occurrences[j] {
+					t.Fatalf("run %d cluster %d occurrence %d differs", run, i+1, j)
+				}
+			}
+		}
+	}
+}
+
+func TestDedupeKeepsEarliestPerDiagonal(t *testing.T) {
+	// Two readings of one fragment-pair on diagonal 5000, plus an unrelated
+	// pair further along the same diagonal and one on another diagonal.
+	in := []cluster.Pair{
+		{A: 1000, B: 6000, Len: 3000},
+		{A: 1200, B: 6200, Len: 2900}, // overlaps the first, same diagonal
+		{A: 9000, B: 14000, Len: 2000},
+		{A: 1000, B: 8000, Len: 3000}, // different diagonal
+	}
+	got := dedupe(append([]cluster.Pair(nil), in...))
+	if len(got) != 3 {
+		t.Fatalf("kept %d pairs, want 3: %+v", len(got), got)
+	}
+	for _, p := range got {
+		if p.A == 1200 {
+			t.Errorf("kept the overlapping duplicate: %+v", got)
+		}
+	}
+}
+
+func TestDedupeTrivial(t *testing.T) {
+	if got := dedupe(nil); len(got) != 0 {
+		t.Errorf("got %+v", got)
+	}
+	one := []cluster.Pair{{A: 1, B: 2, Len: 3}}
+	if got := dedupe(one); len(got) != 1 {
+		t.Errorf("got %+v", got)
 	}
 }

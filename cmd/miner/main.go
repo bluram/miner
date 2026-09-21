@@ -32,6 +32,7 @@ func run() error {
 	minCount := flag.Int("min-count", 2, "airings needed to count as a repeat")
 	rate := flag.Float64("rate", 0, "similarity threshold (0 uses the default)")
 	cut := flag.String("cut", "", "also write one representative mp3 per cluster into this directory")
+	workers := flag.Int("workers", 0, "parallel search workers (0 = one per CPU)")
 	quiet := flag.Bool("quiet", false, "no progress on stderr")
 	flag.Parse()
 
@@ -54,6 +55,7 @@ func run() error {
 		Max:      *maxLen,
 		MinCount: *minCount,
 		Rate:     *rate,
+		Workers:  *workers,
 		Progress: rep.Update,
 	})
 	if err != nil {

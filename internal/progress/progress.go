@@ -37,6 +37,8 @@ const (
 	everyPipe = 30 * time.Second
 	// CPU share is meaningless before some wall time has passed.
 	minForCPU = 300 * time.Millisecond
+	// nor is an estimate on a stage that just started.
+	minForETA = 2 * time.Second
 )
 
 // New returns a Reporter writing to w. A nil w disables it.
@@ -93,8 +95,8 @@ func (r *Reporter) draw(now time.Time, done, total int) {
 	}
 	elapsed := now.Sub(r.start)
 	fmt.Fprintf(&b, "  %s elapsed", clock(elapsed))
-	if total > 0 && done > 0 {
-		spent := now.Sub(r.stageStart)
+	// An estimate needs enough of the stage behind it to mean anything.
+	if spent := now.Sub(r.stageStart); total > 0 && done > 0 && spent >= minForETA {
 		left := time.Duration(float64(spent) / float64(done) * float64(total-done))
 		fmt.Fprintf(&b, "  ~%s left", clock(left))
 	}

@@ -116,3 +116,14 @@ func TestGB(t *testing.T) {
 		t.Errorf("gb = %q, want 100 MB", got)
 	}
 }
+
+// An estimate on a stage that has just started is meaningless, and printed
+// "~0:00 left" at 0%.
+func TestNoEstimateAtStageStart(t *testing.T) {
+	var buf bytes.Buffer
+	r := New(&buf, false)
+	r.Update("search", 1, 1000000)
+	if strings.Contains(buf.String(), "left") {
+		t.Errorf("estimate shown immediately: %q", buf.String())
+	}
+}

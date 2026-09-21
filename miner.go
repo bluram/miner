@@ -10,7 +10,10 @@ package miner
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"miner/internal/cluster"
@@ -26,6 +29,7 @@ type Options struct {
 	Max      time.Duration // longest
 	MinCount int           // occurrences needed to count as a repeat
 	Rate     float64       // similarity threshold
+	Workers  int           // parallel search workers; 0 means one per CPU
 
 	// Progress, if set, is called as each stage advances. total is 0 when the
 	// amount of work is not known up front.
@@ -45,6 +49,9 @@ func (o Options) Defaults() Options {
 	}
 	if o.Rate <= 0 {
 		o.Rate = match.Threshold
+	}
+	if o.Workers < 1 {
+		o.Workers = runtime.NumCPU()
 	}
 	return o
 }
@@ -108,7 +115,7 @@ func Find(paths []string, opt Options) (*Result, error) {
 	step := quick / 2
 	shift := 3 * quick / 2
 
-	pairs := searchPairs(tl, minLen, maxLen, quick, step, opt.Rate, report)
+	pairs := searchPairs(tl, minLen, maxLen, quick, step, opt.Rate, opt.Workers, report)
 	clusters := cluster.Group(pairs, cluster.Options{
 		MinOverlap: 0.5,
 		Same:       sameFunc(fr, minLen, opt.Rate),
@@ -169,47 +176,157 @@ func Find(paths []string, opt Options) (*Result, error) {
 // searchPairs finds every fragment-pair: verify a seed from the index, grow
 // it to its real extent, then skip later seeds already covered on that
 // diagonal.
+//
+// Positions are split into contiguous chunks, one per worker. Each keeps its
+// own covered map, so a fragment-pair straddling a chunk boundary can be
+// found twice; grouping merges the duplicates. Chunks are concatenated in
+// order, which keeps the output identical from run to run.
 func searchPairs(tl *timeline.Timeline, minLen, maxLen, quick, step int, rate float64,
-	report func(stage string, done, total int)) []cluster.Pair {
+	workers int, report func(stage string, done, total int)) []cluster.Pair {
+
 	fr := tl.Frames
 	report("index", 0, 0)
 	ix := index.Build(fr)
-	covered := map[int]int{}
-	var pairs []cluster.Pair
-	buf := make([]int, 0, index.MaxBucket)
 
 	last := len(fr) - minLen
-	for pos := 0; pos <= last; pos++ {
-		if pos&0xFFFF == 0 {
-			report("search", pos, last)
-		}
-		buf = ix.Lookup(fr, pos, buf[:0])
-		for _, q := range buf {
-			if q <= pos || q-pos < minLen || q+minLen > len(fr) {
-				continue
-			}
-			d := q - pos
-			if end, ok := covered[d]; ok && pos < end {
-				continue
-			}
-			if match.Rate(fr[pos:pos+quick], fr[q:q+quick]) < rate {
-				continue
-			}
-			if match.Rate(fr[pos:pos+minLen], fr[q:q+minLen]) < rate {
-				continue
-			}
-			if !tl.Contiguous(pos, pos+minLen) || !tl.Contiguous(q, q+minLen) {
-				continue
-			}
-			lo, length := match.Extend(fr, pos, q, minLen, step, maxLen, rate)
-			if length < minLen {
-				continue
-			}
-			covered[d] = lo + length
-			pairs = append(pairs, cluster.Pair{A: lo, B: lo + d, Len: length})
-		}
+	if last < 0 {
+		return nil
 	}
-	return pairs
+	if workers < 1 {
+		workers = 1
+	}
+
+	bounds := chunks(last+1, workers)
+	out := make([][]cluster.Pair, len(bounds))
+
+	var scanned atomic.Int64
+	stop := make(chan struct{})
+	reported := make(chan struct{})
+	go func() {
+		defer close(reported)
+		t := time.NewTicker(150 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				report("search", int(scanned.Load()), last)
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for ci, b := range bounds {
+		wg.Add(1)
+		go func(ci, from, to int) {
+			defer wg.Done()
+			covered := map[int]int{}
+			buf := make([]int, 0, index.MaxBucket)
+			var pairs []cluster.Pair
+			local := 0
+			for pos := from; pos < to; pos++ {
+				if local++; local == 4096 {
+					scanned.Add(int64(local))
+					local = 0
+				}
+				buf = ix.Lookup(fr, pos, buf[:0])
+				for _, q := range buf {
+					if q <= pos || q-pos < minLen || q+minLen > len(fr) {
+						continue
+					}
+					d := q - pos
+					if end, ok := covered[d]; ok && pos < end {
+						continue
+					}
+					if match.Rate(fr[pos:pos+quick], fr[q:q+quick]) < rate {
+						continue
+					}
+					if match.Rate(fr[pos:pos+minLen], fr[q:q+minLen]) < rate {
+						continue
+					}
+					if !tl.Contiguous(pos, pos+minLen) || !tl.Contiguous(q, q+minLen) {
+						continue
+					}
+					lo, length := match.Extend(fr, pos, q, minLen, step, maxLen, rate)
+					if length < minLen {
+						continue
+					}
+					covered[d] = lo + length
+					pairs = append(pairs, cluster.Pair{A: lo, B: lo + d, Len: length})
+				}
+			}
+			scanned.Add(int64(local))
+			out[ci] = pairs
+		}(ci, b[0], b[1])
+	}
+	wg.Wait()
+	close(stop)
+	<-reported
+
+	n := 0
+	for _, p := range out {
+		n += len(p)
+	}
+	all := make([]cluster.Pair, 0, n)
+	for _, p := range out {
+		all = append(all, p...)
+	}
+	return dedupe(all)
+}
+
+// dedupe drops pairs that repeat a region already covered on their diagonal.
+//
+// A worker skips seeds it has already covered, but only within its own chunk,
+// so a fragment-pair straddling a boundary is found twice with slightly
+// different extents. Keeping the earliest on each diagonal is what a single
+// worker would have done, which makes the result independent of how the work
+// was split.
+func dedupe(pairs []cluster.Pair) []cluster.Pair {
+	if len(pairs) < 2 {
+		return pairs
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		di, dj := pairs[i].B-pairs[i].A, pairs[j].B-pairs[j].A
+		if di != dj {
+			return di < dj
+		}
+		if pairs[i].A != pairs[j].A {
+			return pairs[i].A < pairs[j].A
+		}
+		return pairs[i].Len > pairs[j].Len
+	})
+	out := pairs[:0]
+	lastD, lastEnd := 0, 0
+	for i, p := range pairs {
+		d := p.B - p.A
+		if i > 0 && d == lastD && p.A < lastEnd {
+			continue
+		}
+		out = append(out, p)
+		lastD, lastEnd = d, p.A+p.Len
+	}
+	return out
+}
+
+// chunks splits [0,n) into at most workers contiguous ranges.
+func chunks(n, workers int) [][2]int {
+	if n <= 0 {
+		return nil
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	size := (n + workers - 1) / workers
+	var out [][2]int
+	for from := 0; from < n; from += size {
+		to := from + size
+		if to > n {
+			to = n
+		}
+		out = append(out, [2]int{from, to})
+	}
+	return out
 }
 
 // sameFunc checks a candidate against a cluster's seed, using the alignment

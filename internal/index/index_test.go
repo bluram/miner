@@ -171,7 +171,7 @@ func TestRealDayIndexIsSelective(t *testing.T) {
 		t.Skip("testdata not present")
 	}
 	sort.Strings(paths)
-	tl, err := timeline.Build(paths[:4])
+	tl, err := timeline.Build(paths[:4], nil)
 	if err != nil {
 		t.Fatal(err)
 	}

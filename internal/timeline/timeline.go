@@ -97,8 +97,8 @@ func Glob(dir string) ([]string, error) {
 
 // Build loads the given files and stitches them together. Files are read one
 // at a time and released once copied, so peak memory stays near the size of
-// the finished timeline.
-func Build(paths []string) (*Timeline, error) {
+// the finished timeline. A non-nil onFile is called as each is read.
+func Build(paths []string, onFile func(done, total int)) (*Timeline, error) {
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("timeline: no files")
 	}
@@ -166,6 +166,9 @@ func Build(paths []string) (*Timeline, error) {
 
 	tl.Frames = make([]uint16, 0, total)
 	for i, m := range metas {
+		if onFile != nil {
+			onFile(i, len(metas))
+		}
 		if keep[i] == 0 {
 			continue
 		}

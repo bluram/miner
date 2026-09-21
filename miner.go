@@ -26,6 +26,10 @@ type Options struct {
 	Max      time.Duration // longest
 	MinCount int           // occurrences needed to count as a repeat
 	Rate     float64       // similarity threshold
+
+	// Progress, if set, is called as each stage advances. total is 0 when the
+	// amount of work is not known up front.
+	Progress func(stage string, done, total int)
 }
 
 // Defaults fills in anything left at zero.
@@ -85,7 +89,14 @@ func Find(paths []string, opt Options) (*Result, error) {
 		return nil, fmt.Errorf("miner: min %v is not shorter than max %v", opt.Min, opt.Max)
 	}
 
-	tl, err := timeline.Build(paths)
+	report := opt.Progress
+	if report == nil {
+		report = func(string, int, int) {}
+	}
+
+	tl, err := timeline.Build(paths, func(done, total int) {
+		report("load", done, total)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -97,12 +108,16 @@ func Find(paths []string, opt Options) (*Result, error) {
 	step := quick / 2
 	shift := 3 * quick / 2
 
-	pairs := searchPairs(tl, minLen, maxLen, quick, step, opt.Rate)
+	pairs := searchPairs(tl, minLen, maxLen, quick, step, opt.Rate, report)
 	clusters := cluster.Group(pairs, cluster.Options{
 		MinOverlap: 0.5,
 		Same:       sameFunc(fr, minLen, opt.Rate),
 		Verify:     verifyFunc(fr, minLen, quick, shift, opt.Rate),
+		Progress: func(done, total int) {
+			report("group", done, total)
+		},
 	})
+	report("output", 0, 0)
 
 	res := &Result{Channel: tl.Channel}
 	if len(tl.Segs) > 0 {
@@ -154,14 +169,20 @@ func Find(paths []string, opt Options) (*Result, error) {
 // searchPairs finds every fragment-pair: verify a seed from the index, grow
 // it to its real extent, then skip later seeds already covered on that
 // diagonal.
-func searchPairs(tl *timeline.Timeline, minLen, maxLen, quick, step int, rate float64) []cluster.Pair {
+func searchPairs(tl *timeline.Timeline, minLen, maxLen, quick, step int, rate float64,
+	report func(stage string, done, total int)) []cluster.Pair {
 	fr := tl.Frames
+	report("index", 0, 0)
 	ix := index.Build(fr)
 	covered := map[int]int{}
 	var pairs []cluster.Pair
 	buf := make([]int, 0, index.MaxBucket)
 
-	for pos := 0; pos+minLen <= len(fr); pos++ {
+	last := len(fr) - minLen
+	for pos := 0; pos <= last; pos++ {
+		if pos&0xFFFF == 0 {
+			report("search", pos, last)
+		}
 		buf = ix.Lookup(fr, pos, buf[:0])
 		for _, q := range buf {
 			if q <= pos || q-pos < minLen || q+minLen > len(fr) {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"miner"
+	"miner/internal/progress"
 )
 
 func main() {
@@ -31,6 +32,7 @@ func run() error {
 	minCount := flag.Int("min-count", 2, "airings needed to count as a repeat")
 	rate := flag.Float64("rate", 0, "similarity threshold (0 uses the default)")
 	cut := flag.String("cut", "", "also write one representative mp3 per cluster into this directory")
+	quiet := flag.Bool("quiet", false, "no progress on stderr")
 	flag.Parse()
 
 	if *in == "" {
@@ -43,11 +45,16 @@ func run() error {
 		return err
 	}
 
+	var rep *progress.Reporter
+	if !*quiet {
+		rep = progress.Stderr()
+	}
 	res, err := miner.Find(paths, miner.Options{
 		Min:      *minLen,
 		Max:      *maxLen,
 		MinCount: *minCount,
 		Rate:     *rate,
+		Progress: rep.Update,
 	})
 	if err != nil {
 		return err
@@ -59,8 +66,12 @@ func run() error {
 		return err
 	}
 	if *cut != "" {
-		return cutRepresentatives(res, *cut)
+		if err := cutRepresentatives(res, *cut, rep); err != nil {
+			return err
+		}
 	}
+	rep.Finish()
+	fmt.Fprintf(os.Stderr, "%d clusters\n", len(res.Clusters))
 	return nil
 }
 
@@ -124,21 +135,22 @@ func write(res *miner.Result, path string) error {
 
 // cutRepresentatives writes one mp3 per cluster, so the sample can be heard.
 // The .bin files sit beside the mp3 they were made from.
-func cutRepresentatives(res *miner.Result, dir string) error {
+func cutRepresentatives(res *miner.Result, dir string, rep *progress.Reporter) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	for i := range res.Clusters {
+		rep.Update("cut", i, len(res.Clusters))
 		c := &res.Clusters[i]
-		rep := c.Representative()
-		src := trimBin(rep.File)
+		r := c.Representative()
+		src := trimBin(r.File)
 		if _, err := os.Stat(src); err != nil {
 			return fmt.Errorf("cut cluster %d: %w", c.ID, err)
 		}
 		dst := filepath.Join(dir, fmt.Sprintf("cluster-%04d.mp3", c.ID))
 		ctx, cancel := commandTimeout()
 		cmd := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-y",
-			"-ss", fmt.Sprintf("%.3f", rep.OffsetSec),
+			"-ss", fmt.Sprintf("%.3f", r.OffsetSec),
 			"-t", fmt.Sprintf("%.3f", c.DurationSec),
 			"-i", src, dst)
 		err := cmd.Run()

@@ -35,7 +35,7 @@ func main() {
 	}
 
 	t0 := time.Now()
-	tl, err := timeline.Build(paths)
+	tl, err := timeline.Build(paths, nil)
 	if err != nil {
 		panic(err)
 	}

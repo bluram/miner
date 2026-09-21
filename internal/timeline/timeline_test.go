@@ -21,7 +21,7 @@ func dayPaths(t *testing.T, day string) []string {
 }
 
 func TestBuildOneDay(t *testing.T) {
-	tl, err := Build(dayPaths(t, "2026-08-01"))
+	tl, err := Build(dayPaths(t, "2026-08-01"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestBuildOneDay(t *testing.T) {
 // 24 minutes too long.
 func TestOverlapIsTrimmed(t *testing.T) {
 	paths := dayPaths(t, "2026-08-01")
-	tl, err := Build(paths)
+	tl, err := Build(paths, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestOverlapIsTrimmed(t *testing.T) {
 
 // Segments must tile the frame slice with no holes and no double-counting.
 func TestSegmentsTileFrames(t *testing.T) {
-	tl, err := Build(dayPaths(t, "2026-08-01"))
+	tl, err := Build(dayPaths(t, "2026-08-01"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestSegmentsTileFrames(t *testing.T) {
 }
 
 func TestAtMapsBackToWallClock(t *testing.T) {
-	tl, err := Build(dayPaths(t, "2026-08-01"))
+	tl, err := Build(dayPaths(t, "2026-08-01"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestAtMapsBackToWallClock(t *testing.T) {
 }
 
 func TestAtRejectsOutOfRange(t *testing.T) {
-	tl, err := Build(dayPaths(t, "2026-08-01"))
+	tl, err := Build(dayPaths(t, "2026-08-01"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestAtRejectsOutOfRange(t *testing.T) {
 
 // A match that spans two recordings is not one piece of audio.
 func TestContiguous(t *testing.T) {
-	tl, err := Build(dayPaths(t, "2026-08-01"))
+	tl, err := Build(dayPaths(t, "2026-08-01"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestCorruptFileIsSkipped(t *testing.T) {
 		}
 		extra = append(extra, p)
 	}
-	tl, err := Build(append(extra, paths...))
+	tl, err := Build(append(extra, paths...), nil)
 	if err != nil {
 		t.Fatalf("bad files killed the build: %v", err)
 	}
@@ -202,13 +202,13 @@ func TestBuildRejectsMixedChannels(t *testing.T) {
 		}
 	}
 	paths, _ := Glob(dir)
-	if _, err := Build(paths); err == nil {
+	if _, err := Build(paths, nil); err == nil {
 		t.Error("want error for mixed channels")
 	}
 }
 
 func TestBuildRejectsEmpty(t *testing.T) {
-	if _, err := Build(nil); err == nil {
+	if _, err := Build(nil, nil); err == nil {
 		t.Error("want error for no files")
 	}
 }

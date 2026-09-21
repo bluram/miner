@@ -148,6 +148,9 @@ type Options struct {
 	// safe on small inputs.
 	Same func(a, b Occurrence, shift int) bool
 
+	// Progress, if set, is called as seeds are processed.
+	Progress func(done, total int)
+
 	// Verify re-checks a finished cluster's members against its
 	// representative, and must find the alignment itself. Shifts accumulate
 	// along the path from the seed, so on a large cluster they drift too far
@@ -281,7 +284,10 @@ func Group(pairs []Pair, opt Options) []Cluster {
 		off int // alignment relative to the seed
 	}
 	var members []member
-	for _, seed := range order {
+	for oi, seed := range order {
+		if opt.Progress != nil {
+			opt.Progress(oi, len(order))
+		}
 		if taken[seed] || len(adj[seed]) == 0 {
 			continue
 		}

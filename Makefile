@@ -1,7 +1,7 @@
 .PHONY: build run test vet clean help
 
 BINARY_NAME=miner
-MAIN_PATH=cmd/miner/main.go
+MAIN_PATH=./cmd/miner
 BUILD_DIR=bin
 
 help:

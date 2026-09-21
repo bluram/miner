@@ -1,0 +1,251 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 354" width="900" height="354" role="img" aria-label="Airings of the seven most repeated fragments across one day of enerji_fm radio">
+<style>
+  .viz { --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984; --grid:#e6e5e1; --mark:#2a78d6; }
+  @media (prefers-color-scheme: dark) {
+    .viz { --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --ink3:#8a8984; --grid:#2e2e2c; --mark:#3987e5; }
+  }
+  .bg   { fill: var(--surface); }
+  .t1   { fill: var(--ink);  font: 600 19px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .t2   { fill: var(--ink2); font: 400 13px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .t3   { fill: var(--ink3); font: 400 12px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .lab  { fill: var(--ink);  font: 500 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .lab2 { fill: var(--ink3); font: 400 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .axis { fill: var(--ink3); font: 400 11px ui-sans-serif, system-ui, sans-serif; }
+  .grid { stroke: var(--grid); stroke-width: 1; }
+  .mark { fill: var(--mark); }
+</style>
+<g class="viz"><rect class="bg" width="900" height="354"/>
+<text class="t1" x="24" y="38">miner</text>
+<text class="t2" x="24" y="60">Every fragment that repeats, found without being told what to look for</text>
+<text class="t3" x="24" y="79">enerji_fm &#183; 24 h &#183; 392 clusters in 1.8 s &#183; seven most repeated shown</text>
+<line class="grid" x1="150.0" y1="90" x2="150.0" y2="308"/>
+<text class="axis" x="150.0" y="322" text-anchor="middle">00:00</text>
+<line class="grid" x1="240.2" y1="90" x2="240.2" y2="308"/>
+<text class="axis" x="240.2" y="322" text-anchor="middle">03:00</text>
+<line class="grid" x1="330.5" y1="90" x2="330.5" y2="308"/>
+<text class="axis" x="330.5" y="322" text-anchor="middle">06:00</text>
+<line class="grid" x1="420.8" y1="90" x2="420.8" y2="308"/>
+<text class="axis" x="420.8" y="322" text-anchor="middle">09:00</text>
+<line class="grid" x1="511.0" y1="90" x2="511.0" y2="308"/>
+<text class="axis" x="511.0" y="322" text-anchor="middle">12:00</text>
+<line class="grid" x1="601.2" y1="90" x2="601.2" y2="308"/>
+<text class="axis" x="601.2" y="322" text-anchor="middle">15:00</text>
+<line class="grid" x1="691.5" y1="90" x2="691.5" y2="308"/>
+<text class="axis" x="691.5" y="322" text-anchor="middle">18:00</text>
+<line class="grid" x1="781.8" y1="90" x2="781.8" y2="308"/>
+<text class="axis" x="781.8" y="322" text-anchor="middle">21:00</text>
+<line class="grid" x1="872.0" y1="90" x2="872.0" y2="308"/>
+<text class="axis" x="872.0" y="322" text-anchor="middle">24:00</text>
+<line class="grid" x1="150" y1="106.5" x2="872" y2="106.5"/>
+<text class="lab" x="104" y="111" text-anchor="end">11.5s</text>
+<text class="lab2" x="136" y="111" text-anchor="end">&#215;50</text>
+<rect class="mark" x="164.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="172.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="187.3" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="195.1" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="203.1" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="217.3" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="225.5" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="232.4" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="262.6" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="277.5" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="292.8" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="308.3" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="315.7" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="346.0" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="354.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="376.0" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="383.1" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="398.5" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="406.0" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="428.8" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="436.4" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="474.0" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="496.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="503.9" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="520.7" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="527.1" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="549.0" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="580.5" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="587.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="594.5" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="617.0" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="625.5" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="641.1" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="647.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="655.4" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="670.6" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="677.9" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="687.5" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="708.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="759.9" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="775.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="790.1" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="797.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="804.7" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="819.3" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="827.2" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="834.4" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="849.7" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="858.8" y="100" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="863.7" y="100" width="3" height="13" rx="1.5"/>
+<line class="grid" x1="150" y1="136.5" x2="872" y2="136.5"/>
+<text class="lab" x="104" y="141" text-anchor="end">29.7s</text>
+<text class="lab2" x="136" y="141" text-anchor="end">&#215;39</text>
+<rect class="mark" x="345.5" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="353.5" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="369.0" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="375.5" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="382.4" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="397.6" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="405.3" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="412.8" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="428.0" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="435.9" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="444.8" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="459.2" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="466.2" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="488.4" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="495.3" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="503.6" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="519.4" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="526.4" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="533.9" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="548.2" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="556.5" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="564.2" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="579.7" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="586.8" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="593.5" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="609.6" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="615.9" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="624.8" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="640.2" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="654.5" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="669.4" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="677.2" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="685.6" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="715.8" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="729.7" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="745.2" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="759.3" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="766.9" y="130" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="774.3" y="130" width="3" height="13" rx="1.5"/>
+<line class="grid" x1="150" y1="166.5" x2="872" y2="166.5"/>
+<text class="lab" x="104" y="171" text-anchor="end">11.0s</text>
+<text class="lab2" x="136" y="171" text-anchor="end">&#215;24</text>
+<rect class="mark" x="178.9" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="209.0" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="239.0" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="269.1" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="299.2" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="329.2" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="359.4" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="388.3" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="389.4" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="419.5" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="449.6" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="479.6" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="509.7" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="539.9" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="570.0" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="600.1" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="630.1" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="660.2" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="690.2" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="720.3" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="750.5" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="780.5" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="810.6" y="160" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="840.7" y="160" width="3" height="13" rx="1.5"/>
+<line class="grid" x1="150" y1="196.5" x2="872" y2="196.5"/>
+<text class="lab" x="104" y="201" text-anchor="end">14.9s</text>
+<text class="lab2" x="136" y="201" text-anchor="end">&#215;21</text>
+<rect class="mark" x="158.4" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="194.9" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="248.0" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="292.6" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="323.3" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="345.8" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="368.6" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="375.8" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="405.6" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="436.2" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="444.4" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="473.4" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="503.4" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="520.0" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="556.8" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="580.3" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="610.2" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="616.5" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="708.0" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="744.9" y="190" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="773.9" y="190" width="3" height="13" rx="1.5"/>
+<line class="grid" x1="150" y1="226.5" x2="872" y2="226.5"/>
+<text class="lab" x="104" y="231" text-anchor="end">13.4s</text>
+<text class="lab2" x="136" y="231" text-anchor="end">&#215;20</text>
+<rect class="mark" x="155.8" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="164.2" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="219.2" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="290.4" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="321.0" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="366.4" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="426.0" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="462.9" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="491.1" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="514.9" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="543.5" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="574.9" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="617.0" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="663.5" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="693.2" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="723.8" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="755.7" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="783.8" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="813.7" y="220" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="865.6" y="220" width="3" height="13" rx="1.5"/>
+<line class="grid" x1="150" y1="256.5" x2="872" y2="256.5"/>
+<text class="lab" x="104" y="261" text-anchor="end">11.5s</text>
+<text class="lab2" x="136" y="261" text-anchor="end">&#215;19</text>
+<rect class="mark" x="200.5" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="279.9" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="313.5" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="349.4" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="396.9" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="454.1" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="482.6" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="507.8" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="534.7" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="560.7" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="604.2" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="649.3" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="679.8" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="709.8" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="739.0" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="747.2" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="775.3" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="808.3" y="250" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="844.2" y="250" width="3" height="13" rx="1.5"/>
+<line class="grid" x1="150" y1="286.5" x2="872" y2="286.5"/>
+<text class="lab" x="104" y="291" text-anchor="end">40.5s</text>
+<text class="lab2" x="136" y="291" text-anchor="end">&#215;17</text>
+<rect class="mark" x="158.3" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="163.8" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="171.9" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="187.0" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="194.8" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="202.8" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="217.0" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="232.1" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="262.3" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="277.1" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="308.0" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="315.4" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="323.2" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="338.2" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="818.7" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="858.3" y="280" width="3" height="13" rx="1.5"/>
+<rect class="mark" x="863.4" y="280" width="3" height="13" rx="1.5"/>
+<text class="axis" x="24" y="344">one tick = one airing &#183; fragments 10&#8211;120 s, similarity 0.70</text>
+</g></svg>

@@ -88,10 +88,3 @@ func RateAt(frames []uint16, i, j, n int) float64 {
 	}
 	return Rate(frames[i:i+n], frames[j:j+n])
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

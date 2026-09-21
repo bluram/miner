@@ -135,11 +135,29 @@ func (c *Collector) Pairs() []Pair {
 // The comparison is always against the airing's first interval and never
 // against a growing extent. Growing it lets a chain of neighbours creep
 // across the timeline and weld unrelated fragments together.
-// same reports whether two airings really are the same audio. Group calls it
-// with a cluster's representative, a candidate, and the shift to apply to the
-// candidate: a.Start+i lines up with b.Start+shift+i. A nil same accepts
-// every proposed link, which is only safe on small inputs.
-func Group(pairs []Pair, minOverlap float64, same func(a, b Occurrence, shift int) bool) []Cluster {
+// Options configures Group.
+type Options struct {
+	// MinOverlap is how much of the longer interval two readings must share
+	// to count as the same airing.
+	MinOverlap float64
+
+	// Same reports whether two airings are the same audio, given the shift to
+	// apply to b: a.Start+i lines up with b.Start+Shift+i. Group uses it while
+	// growing a cluster, where the shift comes free from the pair that
+	// proposed the link. A nil Same accepts every proposal, which is only
+	// safe on small inputs.
+	Same func(a, b Occurrence, shift int) bool
+
+	// Verify re-checks a finished cluster's members against its
+	// representative, and must find the alignment itself. Shifts accumulate
+	// along the path from the seed, so on a large cluster they drift too far
+	// to trust. A nil Verify falls back to Same with the accumulated shift.
+	Verify func(rep, o Occurrence) bool
+}
+
+// Group turns pairs into clusters of repeated audio.
+func Group(pairs []Pair, opt Options) []Cluster {
+	minOverlap, same := opt.MinOverlap, opt.Same
 	if len(pairs) == 0 {
 		return nil
 	}
@@ -258,12 +276,17 @@ func Group(pairs []Pair, minOverlap float64, same func(a, b Occurrence, shift in
 	taken := make([]bool, len(anchors))
 	var groups [][]Occurrence
 	var queue []edge
+	type member struct {
+		occ Occurrence
+		off int // alignment relative to the seed
+	}
+	var members []member
 	for _, seed := range order {
 		if taken[seed] || len(adj[seed]) == 0 {
 			continue
 		}
 		taken[seed] = true
-		members := []Occurrence{occ[seed]}
+		members = append(members[:0], member{occ[seed], 0})
 		queue = append(queue[:0], adj[seed]...)
 		for len(queue) > 0 {
 			e := queue[0]
@@ -275,13 +298,49 @@ func Group(pairs []Pair, minOverlap float64, same func(a, b Occurrence, shift in
 				continue
 			}
 			taken[e.to] = true
-			members = append(members, occ[e.to])
+			members = append(members, member{occ[e.to], e.off})
 			// Offsets compose along the path from the seed.
 			for _, n := range adj[e.to] {
 				queue = append(queue, edge{n.to, e.off + n.off})
 			}
 		}
-		groups = append(groups, members)
+
+		// Members were checked against the seed, but the cluster's advertised
+		// length is its median occurrence. Those can differ, so re-check each
+		// member against that representative and drop the ones that do not
+		// match what the cluster claims to be. Offsets are known, so no
+		// search is needed.
+		keep := make([]Occurrence, 0, len(members))
+		if (same == nil && opt.Verify == nil) || len(members) < 3 {
+			for _, m := range members {
+				keep = append(keep, m.occ)
+			}
+		} else {
+			byLen := make([]int, len(members))
+			for i := range members {
+				byLen[i] = i
+			}
+			sort.Slice(byLen, func(i, j int) bool {
+				if members[byLen[i]].occ.Len != members[byLen[j]].occ.Len {
+					return members[byLen[i]].occ.Len < members[byLen[j]].occ.Len
+				}
+				return members[byLen[i]].occ.Start < members[byLen[j]].occ.Start
+			})
+			rep := members[byLen[len(byLen)/2]]
+			for _, m := range members {
+				switch {
+				case m.occ == rep.occ:
+				case opt.Verify != nil:
+					if !opt.Verify(rep.occ, m.occ) {
+						continue
+					}
+				case !same(rep.occ, m.occ, m.off-rep.off):
+					continue
+				}
+				keep = append(keep, m.occ)
+			}
+		}
+		groups = append(groups, keep)
 	}
 
 	out := make([]Cluster, 0, len(groups))

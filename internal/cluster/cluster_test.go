@@ -106,7 +106,7 @@ func TestGroupTransitive(t *testing.T) {
 		{A: 100, B: 9000, Len: 300},
 		{A: 5000, B: 9000, Len: 300},
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	if len(got) != 1 {
 		t.Fatalf("clusters = %d, want 1: %+v", len(got), got)
 	}
@@ -127,7 +127,7 @@ func TestGroupMergesNearIdenticalIntervals(t *testing.T) {
 		{A: 100, B: 5000, Len: 300},
 		{A: 105, B: 9000, Len: 295},
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	if len(got) != 1 {
 		t.Fatalf("clusters = %d, want 1", len(got))
 	}
@@ -142,7 +142,7 @@ func TestGroupKeepsUnrelatedApart(t *testing.T) {
 		{A: 100, B: 5000, Len: 300},
 		{A: 20000, B: 40000, Len: 300},
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	if len(got) != 2 {
 		t.Fatalf("clusters = %d, want 2: %+v", len(got), got)
 	}
@@ -154,7 +154,7 @@ func TestGroupDoesNotMergeAdjacent(t *testing.T) {
 		{A: 1000, B: 50000, Len: 300},
 		{A: 1290, B: 80000, Len: 300},
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	if len(got) != 2 {
 		t.Fatalf("clusters = %d, want 2: %+v", len(got), got)
 	}
@@ -163,13 +163,13 @@ func TestGroupDoesNotMergeAdjacent(t *testing.T) {
 func TestGroupDropsSingletons(t *testing.T) {
 	// Both sides land in the same airing, so nothing actually repeats.
 	pairs := []Pair{{A: 100, B: 110, Len: 300}}
-	if got := Group(pairs, tol, nil); len(got) != 0 {
+	if got := Group(pairs, Options{MinOverlap: tol}); len(got) != 0 {
 		t.Errorf("clusters = %+v, want none", got)
 	}
 }
 
 func TestGroupEmpty(t *testing.T) {
-	if got := Group(nil, tol, nil); got != nil {
+	if got := Group(nil, Options{MinOverlap: tol}); got != nil {
 		t.Errorf("got %+v, want nil", got)
 	}
 }
@@ -207,7 +207,7 @@ func TestGroupDoesNotChainAcrossTimeline(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		pairs = append(pairs, Pair{A: i * 20, B: 500000 + i*20, Len: 3000})
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	for _, c := range got {
 		for _, o := range c.Occurrences {
 			if o.Start > 200*20 && o.Start < 500000 {
@@ -229,7 +229,7 @@ func TestGroupMergesWithinTolerance(t *testing.T) {
 		{A: 1000, B: 50000, Len: 3000},
 		{A: 1000 + 1000, B: 90000, Len: 2950},
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	if len(got) != 1 {
 		t.Fatalf("clusters = %d, want 1: %+v", len(got), got)
 	}
@@ -245,9 +245,9 @@ func TestGroupIsDeterministic(t *testing.T) {
 		{A: 100, B: 9000, Len: 300},
 		{A: 40000, B: 70000, Len: 500},
 	}
-	first := Group(pairs, tol, nil)
+	first := Group(pairs, Options{MinOverlap: tol})
 	for i := 0; i < 20; i++ {
-		got := Group(pairs, tol, nil)
+		got := Group(pairs, Options{MinOverlap: tol})
 		if len(got) != len(first) {
 			t.Fatalf("run %d: %d clusters, first had %d", i, len(got), len(first))
 		}
@@ -271,7 +271,7 @@ func TestGroupOccurrencesDoNotOverlap(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		pairs = append(pairs, Pair{A: i * 500, B: 200000 + i*500, Len: 1000})
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	for _, c := range got {
 		for i := 1; i < len(c.Occurrences); i++ {
 			prev, cur := c.Occurrences[i-1], c.Occurrences[i]
@@ -305,7 +305,7 @@ func TestGroupPrefersLongerOccurrence(t *testing.T) {
 		{A: 1000, B: 200000, Len: 4000},
 		{A: 1000, B: 300000, Len: 1100}, // truncated reading of the same airing
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	if len(got) == 0 {
 		t.Fatal("no clusters")
 	}
@@ -343,7 +343,7 @@ func TestGroupRefusesPartialLink(t *testing.T) {
 		// The bridge: a short match from inside the long fragment to the jingle.
 		{A: 1000, B: 500000, Len: 1200},
 	}
-	got := Group(pairs, tol, nil)
+	got := Group(pairs, Options{MinOverlap: tol})
 	for _, c := range got {
 		var hasLong, hasShort bool
 		for _, o := range c.Occurrences {
@@ -382,7 +382,7 @@ func TestGroupDoesNotChainThroughLengthDrift(t *testing.T) {
 		}
 		return float64(hi)/float64(lo) <= 1.2
 	}
-	got := Group(pairs, tol, same)
+	got := Group(pairs, Options{MinOverlap: tol, Same: same})
 	for _, c := range got {
 		lo, hi := c.Occurrences[0].Len, c.Occurrences[0].Len
 		for _, o := range c.Occurrences {
@@ -401,7 +401,7 @@ func TestGroupHonoursSameRejection(t *testing.T) {
 		{A: 1000, B: 200000, Len: 3000},
 	}
 	reject := func(a, b Occurrence, shift int) bool { return false }
-	for _, c := range Group(pairs, tol, reject) {
+	for _, c := range Group(pairs, Options{MinOverlap: tol, Same: reject}) {
 		if len(c.Occurrences) > 1 {
 			t.Errorf("cluster kept %d occurrences though every candidate was rejected", len(c.Occurrences))
 		}
@@ -453,5 +453,66 @@ func TestSubsumeTrivialInputs(t *testing.T) {
 	one := []Cluster{{Occurrences: []Occurrence{{0, 100}, {500, 100}}}}
 	if got := Subsume(one, 0.8); len(got) != 1 {
 		t.Errorf("kept %d, want 1", len(got))
+	}
+}
+
+// Members are checked against the seed, but the cluster advertises its median
+// length. A member that matches the seed yet not the representative must go,
+// or the cluster claims to be something its members are not.
+func TestGroupPrunesAgainstRepresentative(t *testing.T) {
+	pairs := []Pair{
+		{A: 1000, B: 100000, Len: 3000},
+		{A: 1000, B: 200000, Len: 3000},
+		{A: 1000, B: 300000, Len: 3000},
+		{A: 1000, B: 400000, Len: 3000},
+	}
+	// Accept everything against the seed at 1000, but reject the airing at
+	// 300000 when it is compared with any representative.
+	same := func(a, b Occurrence, shift int) bool {
+		if a.Start == 1000 {
+			return true
+		}
+		return b.Start != 300000
+	}
+	got := Group(pairs, Options{MinOverlap: tol, Same: same})
+	for _, c := range got {
+		for _, o := range c.Occurrences {
+			if o.Start == 300000 {
+				t.Errorf("kept the airing the representative rejected: %+v", c.Occurrences)
+			}
+		}
+	}
+}
+
+// Verify, not Same, decides who survives in a finished cluster: shifts
+// accumulate along the path from the seed and drift on a large cluster.
+func TestGroupUsesVerifyForPruning(t *testing.T) {
+	pairs := []Pair{
+		{A: 1000, B: 100000, Len: 3000},
+		{A: 1000, B: 200000, Len: 3000},
+		{A: 1000, B: 300000, Len: 3000},
+	}
+	sameCalls, verifyCalls := 0, 0
+	opt := Options{
+		MinOverlap: tol,
+		Same: func(a, b Occurrence, shift int) bool {
+			sameCalls++
+			return true
+		},
+		Verify: func(rep, o Occurrence) bool {
+			verifyCalls++
+			return o.Start != 300000
+		},
+	}
+	got := Group(pairs, opt)
+	if verifyCalls == 0 {
+		t.Fatal("Verify was never called")
+	}
+	for _, c := range got {
+		for _, o := range c.Occurrences {
+			if o.Start == 300000 {
+				t.Errorf("kept the airing Verify rejected: %+v", c.Occurrences)
+			}
+		}
 	}
 }

@@ -108,10 +108,48 @@ func main() {
 		accepted++
 		return true
 	}
-	clusters := cluster.Group(pairs, 0.5, same)
+	// Pruning finds its own alignment: the shift carried from the seed drifts
+	// on a large cluster.
+	var vCalls, vAccepted int
+	verify := func(rep, o cluster.Occurrence) bool {
+		vCalls++
+		n := min(rep.Len, o.Len)
+		if n < minLen {
+			return false
+		}
+		if lo, hi := min(rep.Len, o.Len), max(rep.Len, o.Len); float64(hi)/float64(lo) > 1.5 {
+			return false
+		}
+		win := min(n, 2*fps)
+		if rep.Start+win > len(fr) {
+			return false
+		}
+		bestShift, best := 0, -1.0
+		maxShift := 3 * fps / 2
+		for sh := -maxShift; sh <= maxShift; sh++ {
+			st := o.Start + sh
+			if st < 0 || st+win > len(fr) {
+				continue
+			}
+			if r := match.Rate(fr[rep.Start:rep.Start+win], fr[st:st+win]); r > best {
+				best, bestShift = r, sh
+			}
+		}
+		st := o.Start + bestShift
+		if st < 0 || st+n > len(fr) || rep.Start+n > len(fr) {
+			return false
+		}
+		if match.Rate(fr[rep.Start:rep.Start+n], fr[st:st+n]) < match.Threshold {
+			return false
+		}
+		vAccepted++
+		return true
+	}
+	clusters := cluster.Group(pairs, cluster.Options{MinOverlap: 0.5, Same: same, Verify: verify})
 	fmt.Printf("group     %v   clusters %d\n", time.Since(t3).Round(time.Second), len(clusters))
 	fmt.Printf("  same(): %d calls  accepted %d  rej bounds %d  ratio %d  rate %d\n",
 		calls, accepted, rejBounds, rejRatio, rejRate)
+	fmt.Printf("  verify(): %d calls  accepted %d\n", vCalls, vAccepted)
 
 	var kept []cluster.Cluster
 	for _, c := range clusters {
@@ -218,8 +256,8 @@ func main() {
 
 	// Ground truth: brute-force the biggest cluster's representative against
 	// the whole timeline, so the cluster count can be checked against it.
-	if len(kept) > 0 {
-		c := kept[0]
+	for ci := 0; ci < 3 && ci < len(kept); ci++ {
+		c := kept[ci]
 		// Use a full-length occurrence, not the first one, which may be a
 		// truncated reading.
 		rep := c.Occurrences[0]
@@ -251,7 +289,21 @@ func main() {
 			found = append(found, i)
 			last = i
 		}
-		fmt.Printf("\nground truth for cluster 1 (%.1fs rep at %s):\n",
+		lh := map[int]int{}
+		for _, o := range c.Occurrences {
+			lh[int(fingerprint.FramesToDuration(o.Len).Seconds())]++
+		}
+		var lks []int
+		for k := range lh {
+			lks = append(lks, k)
+		}
+		sort.Ints(lks)
+		fmt.Printf("\ncluster %d occurrence lengths:", c.ID)
+		for _, k := range lks {
+			fmt.Printf(" %ds:%d", k, lh[k])
+		}
+		fmt.Println()
+		fmt.Printf("ground truth for cluster %d (%.1fs rep at %s):\n", c.ID,
 			fingerprint.FramesToDuration(n).Seconds(), tl.Time(rep.Start).Format("15:04:05"))
 		fmt.Printf("  brute force found %d airings in %v, cluster reported %d  (near misses 0.70-0.80: %d)\n",
 			len(found), time.Since(t4).Round(time.Second), len(c.Occurrences), nearMiss)
@@ -263,7 +315,7 @@ func main() {
 		for _, f := range found {
 			near := false
 			for _, o := range c.Occurrences {
-				if f > o.Start-quick && f < o.Start+quick {
+				if f < o.End() && f+n > o.Start {
 					near = true
 				}
 			}
@@ -282,7 +334,7 @@ func main() {
 		for _, f := range found {
 			near := false
 			for _, o := range c.Occurrences {
-				if f > o.Start-quick && f < o.Start+quick {
+				if f < o.End() && f+n > o.Start {
 					near = true
 				}
 			}
@@ -308,6 +360,91 @@ func main() {
 			}
 		}
 		fmt.Printf("  of those: in another cluster %d, not in any cluster %d\n", inOther, lost)
+
+		// For the airings that reached no cluster at all, did the search even
+		// produce a pair for them?
+		var lostPos []int
+		for _, f := range found {
+			near := false
+			for _, o := range c.Occurrences {
+				if f < o.End() && f+n > o.Start {
+					near = true
+				}
+			}
+			if near {
+				continue
+			}
+			inAny := false
+			for _, oc := range kept {
+				if oc.ID == c.ID {
+					continue
+				}
+				for _, o := range oc.Occurrences {
+					if f < o.End() && f+n > o.Start {
+						inAny = true
+					}
+				}
+			}
+			if !inAny {
+				lostPos = append(lostPos, f)
+			}
+		}
+		// Distinguish the stages: a cluster removed by the 10-120s filter still
+		// existed after grouping.
+		inAllClusters, inKept := 0, 0
+		for _, f := range found {
+			near := false
+			for _, o := range c.Occurrences {
+				if f < o.End() && f+n > o.Start {
+					near = true
+				}
+			}
+			if near {
+				inAllClusters++
+				inKept++
+				continue
+			}
+			hitAll, hitKept := false, false
+			for _, oc := range clusters {
+				for _, o := range oc.Occurrences {
+					if f < o.End() && f+n > o.Start {
+						hitAll = true
+					}
+				}
+			}
+			for _, oc := range kept {
+				if oc.ID == c.ID {
+					continue
+				}
+				for _, o := range oc.Occurrences {
+					if f < o.End() && f+n > o.Start {
+						hitKept = true
+					}
+				}
+			}
+			if hitAll {
+				inAllClusters++
+			}
+			if hitKept {
+				inKept++
+			}
+		}
+		fmt.Printf("  of %d known airings: in some cluster %d, surviving the 10-120s filter %d\n",
+			len(found), inAllClusters, inKept)
+
+		fmt.Printf("\n  pairs involving each airing that reached no cluster:\n")
+		for i, f := range lostPos {
+			if i >= 10 {
+				break
+			}
+			np := 0
+			for _, pr := range pairs {
+				if (pr.A > f-quick && pr.A < f+quick) || (pr.B > f-quick && pr.B < f+quick) {
+					np++
+				}
+			}
+			fmt.Printf("    %s  pairs %d\n", tl.Time(f).Format("15:04:05"), np)
+		}
 		if len(otherIDs) > 0 {
 			fmt.Printf("  spread across %d other clusters:\n", len(otherIDs))
 			type kv struct{ id, n int }
@@ -353,6 +490,40 @@ func main() {
 		fmt.Printf("  pairs joining two known airings: %d\n", both)
 		fmt.Printf("  pairs touching exactly one:      %d\n", oneSide)
 		fmt.Printf("  known airings appearing in any pair: %d of %d\n", len(linked), len(found))
+
+		// Best match of each occurrence against the representative, allowing
+		// for start jitter.
+		band := map[string]int{}
+		shiftMax := 3 * quick
+		for _, o := range c.Occurrences {
+			best := 0.0
+			for sh := -shiftMax; sh <= shiftMax; sh++ {
+				st := o.Start + sh
+				if st < 0 || st+n > len(fr) {
+					continue
+				}
+				if r := match.Rate(fr[rep.Start:rep.Start+n], fr[st:st+n]); r > best {
+					best = r
+				}
+			}
+			switch {
+			case best >= 0.80:
+				band[">=0.80"]++
+			case best >= 0.70:
+				band["0.70-0.80"]++
+			case best >= 0.60:
+				band["0.60-0.70"]++
+			default:
+				band["<0.60"]++
+			}
+		}
+		fmt.Printf("  occurrences vs representative (best within +/-3s):")
+		for _, k := range []string{">=0.80", "0.70-0.80", "0.60-0.70", "<0.60"} {
+			if band[k] > 0 {
+				fmt.Printf("  %s:%d", k, band[k])
+			}
+		}
+		fmt.Println()
 	}
 
 	var m runtime.MemStats

@@ -19,7 +19,7 @@ import (
 
 // Segment is a contiguous stretch of frames from one file.
 type Segment struct {
-	Path   string
+	Path   string    // full path, so the mp3 beside it can be found
 	Start  time.Time // wall-clock time of the first frame
 	Offset int       // its index within the source file
 	N      int       // frames in this segment
@@ -179,7 +179,7 @@ func Build(paths []string) (*Timeline, error) {
 			n = len(f.Frames)
 		}
 		tl.Segs = append(tl.Segs, Segment{
-			Path:   filepath.Base(m.path),
+			Path:   m.path,
 			Start:  m.start,
 			N:      n,
 			Global: len(tl.Frames),

@@ -13,6 +13,16 @@ import (
 	"sort"
 )
 
+const (
+	// minLinkRatio is how much of the longer airing a pair must cover before
+	// it may join two airings into one cluster.
+	minLinkRatio = 0.7
+
+	// minCover is how much of a cluster a longer one must explain before the
+	// shorter is dropped as a piece of it.
+	minCover = 0.8
+)
+
 // Pair is one repeat: [A,A+Len) matches [B,B+Len), A < B.
 type Pair struct {
 	A, B, Len int
@@ -125,7 +135,11 @@ func (c *Collector) Pairs() []Pair {
 // The comparison is always against the airing's first interval and never
 // against a growing extent. Growing it lets a chain of neighbours creep
 // across the timeline and weld unrelated fragments together.
-func Group(pairs []Pair, minOverlap float64) []Cluster {
+// same reports whether two airings really are the same audio. Group calls it
+// with a cluster's representative, a candidate, and the shift to apply to the
+// candidate: a.Start+i lines up with b.Start+shift+i. A nil same accepts
+// every proposed link, which is only safe on small inputs.
+func Group(pairs []Pair, minOverlap float64, same func(a, b Occurrence, shift int) bool) []Cluster {
 	if len(pairs) == 0 {
 		return nil
 	}
@@ -140,12 +154,15 @@ func Group(pairs []Pair, minOverlap float64) []Cluster {
 			item{p.A, p.Len, i, 0},
 			item{p.B, p.Len, i, 1})
 	}
+	// Longest first at a given start: the anchor should be the best-supported
+	// reading of an airing. Anchoring on the shortest lets a truncated
+	// interval win and pushes the full-length ones into airings of their own.
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].start != items[j].start {
 			return items[i].start < items[j].start
 		}
 		if items[i].length != items[j].length {
-			return items[i].length < items[j].length
+			return items[i].length > items[j].length
 		}
 		if items[i].pair != items[j].pair {
 			return items[i].pair < items[j].pair
@@ -180,39 +197,108 @@ func Group(pairs []Pair, minOverlap float64) []Cluster {
 		sideAiring[it.pair][it.side] = airing[i]
 	}
 
-	uf := newUF(len(anchors))
-	for _, sa := range sideAiring {
-		if sa[0] >= 0 && sa[1] >= 0 && sa[0] != sa[1] {
-			uf.join(sa[0], sa[1])
-		}
-	}
-
-	occOf := func(a int) Occurrence {
+	repLen := make([]int, len(anchors))
+	for a := range anchors {
 		l := append([]int(nil), lens[a]...)
 		sort.Ints(l)
-		return Occurrence{anchors[a], l[len(l)/2]}
+		repLen[a] = l[len(l)/2]
 	}
-
-	byRoot := map[int][]Occurrence{}
+	occ := make([]Occurrence, len(anchors))
 	for a := range anchors {
-		r := uf.root(a)
-		byRoot[r] = append(byRoot[r], occOf(a))
+		occ[a] = Occurrence{anchors[a], repLen[a]}
 	}
 
-	out := make([]Cluster, 0, len(byRoot))
-	for _, occ := range byRoot {
-		sort.Slice(occ, func(i, j int) bool {
-			if occ[i].Start != occ[j].Start {
-				return occ[i].Start < occ[j].Start
+	// Pairs only propose which airings might belong together. Treating them
+	// as proof and taking the transitive closure chains 9-second fragments to
+	// 40-second ones a step at a time: each link passes, the closure is
+	// nonsense. So every candidate is checked against the cluster's own
+	// representative instead of against its neighbour.
+	// An edge carries the alignment the pair proved, so a candidate never has
+	// to be re-aligned by searching: the peak is about one frame wide and a
+	// coarse scan misses it.
+	adj := make([][]edge, len(anchors))
+	for i, sa := range sideAiring {
+		a, b := sa[0], sa[1]
+		if a < 0 || b < 0 || a == b {
+			continue
+		}
+		if longer := max(repLen[a], repLen[b]); longer > 0 &&
+			float64(pairs[i].Len)/float64(longer) < minLinkRatio {
+			continue
+		}
+		// pairs[i].A+t aligns with pairs[i].B+t, so relative to the anchors
+		// the offset from a to b is this.
+		off := (pairs[i].B - anchors[b]) - (pairs[i].A - anchors[a])
+		adj[a] = append(adj[a], edge{b, off})
+		adj[b] = append(adj[b], edge{a, -off})
+	}
+	for a := range adj {
+		sort.Slice(adj[a], func(i, j int) bool {
+			if adj[a][i].to != adj[a][j].to {
+				return adj[a][i].to < adj[a][j].to
 			}
-			return occ[i].Len < occ[j].Len
+			return adj[a][i].off < adj[a][j].off
 		})
-		occ = disjoint(occ)
-		if len(occ) < 2 {
+	}
+
+	// Leaders first: the best-connected airing is the most reliable
+	// representative of its fragment.
+	order := make([]int, len(anchors))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(i, j int) bool {
+		a, b := order[i], order[j]
+		if len(adj[a]) != len(adj[b]) {
+			return len(adj[a]) > len(adj[b])
+		}
+		return anchors[a] < anchors[b]
+	})
+
+	taken := make([]bool, len(anchors))
+	var groups [][]Occurrence
+	var queue []edge
+	for _, seed := range order {
+		if taken[seed] || len(adj[seed]) == 0 {
+			continue
+		}
+		taken[seed] = true
+		members := []Occurrence{occ[seed]}
+		queue = append(queue[:0], adj[seed]...)
+		for len(queue) > 0 {
+			e := queue[0]
+			queue = queue[1:]
+			if taken[e.to] {
+				continue
+			}
+			if same != nil && !same(occ[seed], occ[e.to], e.off) {
+				continue
+			}
+			taken[e.to] = true
+			members = append(members, occ[e.to])
+			// Offsets compose along the path from the seed.
+			for _, n := range adj[e.to] {
+				queue = append(queue, edge{n.to, e.off + n.off})
+			}
+		}
+		groups = append(groups, members)
+	}
+
+	out := make([]Cluster, 0, len(groups))
+	for _, members := range groups {
+		sort.Slice(members, func(i, j int) bool {
+			if members[i].Start != members[j].Start {
+				return members[i].Start < members[j].Start
+			}
+			return members[i].Len > members[j].Len
+		})
+		members = disjoint(members)
+		if len(members) < 2 {
 			continue // seen once is not a repeat
 		}
-		out = append(out, Cluster{Occurrences: occ})
+		out = append(out, Cluster{Occurrences: members})
 	}
+	out = Subsume(out, minCover)
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Occurrences[0].Start < out[j].Occurrences[0].Start
 	})
@@ -222,10 +308,100 @@ func Group(pairs []Pair, minOverlap float64) []Cluster {
 	return out
 }
 
+// Subsume drops clusters whose occurrences are already explained by a longer
+// cluster.
+//
+// A 10-second piece of a 34-second advert repeats exactly as often as the
+// advert does, so it forms a perfectly good cluster of its own. Reporting
+// both is fragmentation: the longest reading of a stretch of airtime is the
+// one worth keeping.
+//
+// A cluster goes when at least minCover of its occurrences are at least
+// minCover covered by occurrences of longer clusters.
+func Subsume(clusters []Cluster, minCover float64) []Cluster {
+	if len(clusters) < 2 {
+		return clusters
+	}
+
+	var spans []span
+	for i, c := range clusters {
+		l := c.Len()
+		for _, o := range c.Occurrences {
+			spans = append(spans, span{o.Start, o.End(), i, l})
+		}
+	}
+	sort.Slice(spans, func(i, j int) bool {
+		if spans[i].start != spans[j].start {
+			return spans[i].start < spans[j].start
+		}
+		if spans[i].length != spans[j].length {
+			return spans[i].length > spans[j].length
+		}
+		return spans[i].cluster < spans[j].cluster
+	})
+
+	total := make([]int, len(clusters))
+	buried := make([]int, len(clusters))
+	for i, sp := range spans {
+		total[sp.cluster]++
+		own := sp.end - sp.start
+		if own <= 0 {
+			continue
+		}
+		cover := 0
+		// Overlapping spans are adjacent in start order, so a short walk
+		// either way finds them all.
+		for j := i - 1; j >= 0 && spans[j].end > sp.start; j-- {
+			cover += overlapBy(spans[j], sp)
+		}
+		for j := i + 1; j < len(spans) && spans[j].start < sp.end; j++ {
+			cover += overlapBy(spans[j], sp)
+		}
+		if float64(cover)/float64(own) >= minCover {
+			buried[sp.cluster]++
+		}
+	}
+
+	out := clusters[:0]
+	for i, c := range clusters {
+		if total[i] > 0 && float64(buried[i])/float64(total[i]) >= minCover {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// span is one occurrence, tagged with its cluster and that cluster's length.
+type span struct {
+	start, end, cluster, length int
+}
+
+// overlapBy is how much of sp the longer span other covers.
+func overlapBy(other, sp span) int {
+	if other.cluster == sp.cluster || other.length <= sp.length {
+		return 0
+	}
+	lo, hi := max(other.start, sp.start), min(other.end, sp.end)
+	if hi <= lo {
+		return 0
+	}
+	return hi - lo
+}
+
+// edge is a candidate link and the alignment its pair proved.
+type edge struct {
+	to  int
+	off int
+}
+
 // disjoint keeps the occurrences that do not overlap each other. An airing
 // cannot overlap itself, so overlapping entries are the same airing seen
 // again - or a self-similar stretch such as a looping music bed, where only
-// one position per loop is a real occurrence. Input must be sorted by start.
+// one position per loop is a real occurrence.
+//
+// Input must be sorted by start, longest first, so a truncated reading of an
+// airing loses to the full-length one it overlaps.
 func disjoint(occ []Occurrence) []Occurrence {
 	out := occ[:0]
 	end := 0

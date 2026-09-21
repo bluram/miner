@@ -17,9 +17,15 @@ import (
 // Bits per frame.
 const Bits = fingerprint.Rows
 
-// Threshold is production's accept level, used for both the overall rate and
-// the weakest second.
-const Threshold = 0.8
+// Threshold is the accept level for both the overall rate and the weakest
+// second.
+//
+// Production uses 0.8, but it compares a clean uploaded advert against a
+// recording. Every comparison here is recording against recording, so both
+// sides carry encoding noise and genuine repeats land anywhere from 0.70 to
+// 0.90. Unrelated stretches average 0.50 and stayed under 0.70 across 200
+// sampled pairs, so the two populations still separate cleanly.
+const Threshold = 0.70
 
 // framesPerSecond for the per-second breakdown.
 var framesPerSecond = fingerprint.DurationToFrames(time.Second)

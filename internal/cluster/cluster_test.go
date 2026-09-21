@@ -106,7 +106,7 @@ func TestGroupTransitive(t *testing.T) {
 		{A: 100, B: 9000, Len: 300},
 		{A: 5000, B: 9000, Len: 300},
 	}
-	got := Group(pairs, tol)
+	got := Group(pairs, tol, nil)
 	if len(got) != 1 {
 		t.Fatalf("clusters = %d, want 1: %+v", len(got), got)
 	}
@@ -127,7 +127,7 @@ func TestGroupMergesNearIdenticalIntervals(t *testing.T) {
 		{A: 100, B: 5000, Len: 300},
 		{A: 105, B: 9000, Len: 295},
 	}
-	got := Group(pairs, tol)
+	got := Group(pairs, tol, nil)
 	if len(got) != 1 {
 		t.Fatalf("clusters = %d, want 1", len(got))
 	}
@@ -142,7 +142,7 @@ func TestGroupKeepsUnrelatedApart(t *testing.T) {
 		{A: 100, B: 5000, Len: 300},
 		{A: 20000, B: 40000, Len: 300},
 	}
-	got := Group(pairs, tol)
+	got := Group(pairs, tol, nil)
 	if len(got) != 2 {
 		t.Fatalf("clusters = %d, want 2: %+v", len(got), got)
 	}
@@ -154,7 +154,7 @@ func TestGroupDoesNotMergeAdjacent(t *testing.T) {
 		{A: 1000, B: 50000, Len: 300},
 		{A: 1290, B: 80000, Len: 300},
 	}
-	got := Group(pairs, tol)
+	got := Group(pairs, tol, nil)
 	if len(got) != 2 {
 		t.Fatalf("clusters = %d, want 2: %+v", len(got), got)
 	}
@@ -163,13 +163,13 @@ func TestGroupDoesNotMergeAdjacent(t *testing.T) {
 func TestGroupDropsSingletons(t *testing.T) {
 	// Both sides land in the same airing, so nothing actually repeats.
 	pairs := []Pair{{A: 100, B: 110, Len: 300}}
-	if got := Group(pairs, tol); len(got) != 0 {
+	if got := Group(pairs, tol, nil); len(got) != 0 {
 		t.Errorf("clusters = %+v, want none", got)
 	}
 }
 
 func TestGroupEmpty(t *testing.T) {
-	if got := Group(nil, tol); got != nil {
+	if got := Group(nil, tol, nil); got != nil {
 		t.Errorf("got %+v, want nil", got)
 	}
 }
@@ -207,7 +207,7 @@ func TestGroupDoesNotChainAcrossTimeline(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		pairs = append(pairs, Pair{A: i * 20, B: 500000 + i*20, Len: 3000})
 	}
-	got := Group(pairs, tol)
+	got := Group(pairs, tol, nil)
 	for _, c := range got {
 		for _, o := range c.Occurrences {
 			if o.Start > 200*20 && o.Start < 500000 {
@@ -229,7 +229,7 @@ func TestGroupMergesWithinTolerance(t *testing.T) {
 		{A: 1000, B: 50000, Len: 3000},
 		{A: 1000 + 1000, B: 90000, Len: 2950},
 	}
-	got := Group(pairs, tol)
+	got := Group(pairs, tol, nil)
 	if len(got) != 1 {
 		t.Fatalf("clusters = %d, want 1: %+v", len(got), got)
 	}
@@ -245,9 +245,9 @@ func TestGroupIsDeterministic(t *testing.T) {
 		{A: 100, B: 9000, Len: 300},
 		{A: 40000, B: 70000, Len: 500},
 	}
-	first := Group(pairs, tol)
+	first := Group(pairs, tol, nil)
 	for i := 0; i < 20; i++ {
-		got := Group(pairs, tol)
+		got := Group(pairs, tol, nil)
 		if len(got) != len(first) {
 			t.Fatalf("run %d: %d clusters, first had %d", i, len(got), len(first))
 		}
@@ -271,7 +271,7 @@ func TestGroupOccurrencesDoNotOverlap(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		pairs = append(pairs, Pair{A: i * 500, B: 200000 + i*500, Len: 1000})
 	}
-	got := Group(pairs, tol)
+	got := Group(pairs, tol, nil)
 	for _, c := range got {
 		for i := 1; i < len(c.Occurrences); i++ {
 			prev, cur := c.Occurrences[i-1], c.Occurrences[i]
@@ -293,5 +293,165 @@ func TestDisjointKeepsSpacedOccurrences(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("got %+v, want %+v", got, want)
 		}
+	}
+}
+
+// A truncated reading of an airing must not beat the full-length one. Sorting
+// shortest-first let an 11-second interval win over the 40-second fragment at
+// the same position, which then bridged unrelated clusters together.
+func TestGroupPrefersLongerOccurrence(t *testing.T) {
+	pairs := []Pair{
+		{A: 1000, B: 100000, Len: 4000},
+		{A: 1000, B: 200000, Len: 4000},
+		{A: 1000, B: 300000, Len: 1100}, // truncated reading of the same airing
+	}
+	got := Group(pairs, tol, nil)
+	if len(got) == 0 {
+		t.Fatal("no clusters")
+	}
+	// The full-length airing must survive somewhere, and the cluster holding
+	// it must not have been truncated to the short reading.
+	var full *Cluster
+	for i, c := range got {
+		for _, o := range c.Occurrences {
+			if o.Start == 1000 && o.Len == 4000 {
+				full = &got[i]
+			}
+		}
+	}
+	if full == nil {
+		t.Fatalf("the 4000-frame airing at 1000 was lost: %+v", got)
+	}
+	if n := len(full.Occurrences); n != 3 {
+		t.Errorf("cluster has %d occurrences, want the 3 full-length ones", n)
+	}
+	if full.Len() != 4000 {
+		t.Errorf("cluster length = %d, want 4000", full.Len())
+	}
+}
+
+// A pair covering only a fraction of an airing found a nested fragment. With
+// transitive closure one such link is permanent, so it must be refused.
+func TestGroupRefusesPartialLink(t *testing.T) {
+	pairs := []Pair{
+		// A 40-frame-per-second-ish fragment, three airings.
+		{A: 1000, B: 100000, Len: 4000},
+		{A: 1000, B: 200000, Len: 4000},
+		// A short jingle cluster elsewhere.
+		{A: 500000, B: 600000, Len: 1200},
+		{A: 500000, B: 700000, Len: 1200},
+		// The bridge: a short match from inside the long fragment to the jingle.
+		{A: 1000, B: 500000, Len: 1200},
+	}
+	got := Group(pairs, tol, nil)
+	for _, c := range got {
+		var hasLong, hasShort bool
+		for _, o := range c.Occurrences {
+			if o.Len >= 4000 {
+				hasLong = true
+			}
+			if o.Len <= 1200 {
+				hasShort = true
+			}
+		}
+		if hasLong && hasShort {
+			t.Errorf("cluster mixes a 4000-frame fragment with a 1200-frame one: %+v", c.Occurrences)
+		}
+	}
+}
+
+// Lengths drifting in small steps used to chain a 9-second fragment all the
+// way to a 40-second one: every link passed, the closure was nonsense.
+// Checking each candidate against the cluster's own representative stops it.
+func TestGroupDoesNotChainThroughLengthDrift(t *testing.T) {
+	var pairs []Pair
+	// A ladder of airings whose lengths creep up 10% at a time.
+	length := 1100
+	start := 0
+	for i := 0; i < 40; i++ {
+		next := length * 11 / 10
+		pairs = append(pairs, Pair{A: start, B: start + 100000, Len: min(length, next)})
+		start += 200000
+		length = next
+	}
+	// Representative test: only accept candidates within 20% on length.
+	same := func(a, b Occurrence, shift int) bool {
+		lo, hi := a.Len, b.Len
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		return float64(hi)/float64(lo) <= 1.2
+	}
+	got := Group(pairs, tol, same)
+	for _, c := range got {
+		lo, hi := c.Occurrences[0].Len, c.Occurrences[0].Len
+		for _, o := range c.Occurrences {
+			lo, hi = min(lo, o.Len), max(hi, o.Len)
+		}
+		if float64(hi)/float64(lo) > 1.5 {
+			t.Errorf("cluster spans lengths %d..%d; chained through drift", lo, hi)
+		}
+	}
+}
+
+// The representative test must be able to reject a proposed member outright.
+func TestGroupHonoursSameRejection(t *testing.T) {
+	pairs := []Pair{
+		{A: 1000, B: 100000, Len: 3000},
+		{A: 1000, B: 200000, Len: 3000},
+	}
+	reject := func(a, b Occurrence, shift int) bool { return false }
+	for _, c := range Group(pairs, tol, reject) {
+		if len(c.Occurrences) > 1 {
+			t.Errorf("cluster kept %d occurrences though every candidate was rejected", len(c.Occurrences))
+		}
+	}
+}
+
+// A 10-second piece of a 34-second advert repeats exactly as often as the
+// advert, so it clusters just as well. Reporting both is fragmentation.
+func TestSubsumeDropsPieceOfLongerFragment(t *testing.T) {
+	long := Cluster{Occurrences: []Occurrence{
+		{1000, 3400}, {50000, 3400}, {90000, 3400},
+	}}
+	// A piece sitting inside each airing of the long one.
+	piece := Cluster{Occurrences: []Occurrence{
+		{1200, 1000}, {50200, 1000}, {90200, 1000},
+	}}
+	got := Subsume([]Cluster{long, piece}, 0.8)
+	if len(got) != 1 {
+		t.Fatalf("kept %d clusters, want 1: %+v", len(got), got)
+	}
+	if got[0].Len() != 3400 {
+		t.Errorf("kept the %d-frame cluster, want the 3400 one", got[0].Len())
+	}
+}
+
+// Two fragments that merely sit near each other are both real.
+func TestSubsumeKeepsIndependentClusters(t *testing.T) {
+	a := Cluster{Occurrences: []Occurrence{{1000, 3400}, {50000, 3400}}}
+	b := Cluster{Occurrences: []Occurrence{{20000, 1000}, {70000, 1000}}}
+	if got := Subsume([]Cluster{a, b}, 0.8); len(got) != 2 {
+		t.Errorf("kept %d clusters, want 2", len(got))
+	}
+}
+
+// A shorter cluster only partly covered by a longer one survives.
+func TestSubsumeKeepsPartlyCovered(t *testing.T) {
+	long := Cluster{Occurrences: []Occurrence{{1000, 2000}, {50000, 2000}}}
+	// Each piece hangs half outside the long airing.
+	short := Cluster{Occurrences: []Occurrence{{2000, 2000}, {51000, 2000}}}
+	if got := Subsume([]Cluster{long, short}, 0.8); len(got) != 2 {
+		t.Errorf("kept %d clusters, want 2", len(got))
+	}
+}
+
+func TestSubsumeTrivialInputs(t *testing.T) {
+	if got := Subsume(nil, 0.8); len(got) != 0 {
+		t.Errorf("got %+v, want none", got)
+	}
+	one := []Cluster{{Occurrences: []Occurrence{{0, 100}, {500, 100}}}}
+	if got := Subsume(one, 0.8); len(got) != 1 {
+		t.Errorf("kept %d, want 1", len(got))
 	}
 }

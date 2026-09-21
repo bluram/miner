@@ -86,8 +86,32 @@ func main() {
 	fmt.Printf("search    %v   pairs %d\n", time.Since(t2).Round(time.Second), len(pairs))
 
 	t3 := time.Now()
-	clusters := cluster.Group(pairs, 0.5)
+	// A candidate joins only if it matches the cluster's representative
+	// directly, over the representative's own length.
+	var calls, rejBounds, rejRatio, rejRate, accepted int
+	same := func(a, b cluster.Occurrence, shift int) bool {
+		calls++
+		n := min(a.Len, b.Len)
+		bs := b.Start + shift
+		if n < minLen || a.Start < 0 || bs < 0 || a.Start+n > len(fr) || bs+n > len(fr) {
+			rejBounds++
+			return false
+		}
+		if lo, hi := min(a.Len, b.Len), max(a.Len, b.Len); float64(hi)/float64(lo) > 1.5 {
+			rejRatio++
+			return false
+		}
+		if match.Rate(fr[a.Start:a.Start+n], fr[bs:bs+n]) < match.Threshold {
+			rejRate++
+			return false
+		}
+		accepted++
+		return true
+	}
+	clusters := cluster.Group(pairs, 0.5, same)
 	fmt.Printf("group     %v   clusters %d\n", time.Since(t3).Round(time.Second), len(clusters))
+	fmt.Printf("  same(): %d calls  accepted %d  rej bounds %d  ratio %d  rate %d\n",
+		calls, accepted, rejBounds, rejRatio, rejRate)
 
 	var kept []cluster.Cluster
 	for _, c := range clusters {
@@ -137,6 +161,198 @@ func main() {
 				fingerprint.FramesToDuration(off).Seconds(),
 				fingerprint.FramesToDuration(o.Len).Seconds())
 		}
+	}
+
+	// Why does the biggest cluster mix lengths? Find the pairs that bridge
+	// occurrences of very different length.
+	if len(kept) > 0 {
+		big := kept[0]
+		hist := map[int]int{}
+		for _, o := range big.Occurrences {
+			hist[int(fingerprint.FramesToDuration(o.Len).Seconds())]++
+		}
+		var ks []int
+		for k := range hist {
+			ks = append(ks, k)
+		}
+		sort.Ints(ks)
+		fmt.Printf("\nlength histogram of biggest cluster:\n")
+		for _, k := range ks {
+			fmt.Printf("  %3ds  x%d\n", k, hist[k])
+		}
+
+		find := func(pos int) *cluster.Occurrence {
+			i := sort.Search(len(big.Occurrences), func(i int) bool {
+				return big.Occurrences[i].End() > pos
+			})
+			if i < len(big.Occurrences) && big.Occurrences[i].Start <= pos {
+				return &big.Occurrences[i]
+			}
+			return nil
+		}
+		fmt.Printf("\nbridge pairs (linking occurrences of very different length):\n")
+		shown := 0
+		for _, pr := range pairs {
+			oa, ob := find(pr.A), find(pr.B)
+			if oa == nil || ob == nil {
+				continue
+			}
+			lo, hi := oa.Len, ob.Len
+			if lo > hi {
+				lo, hi = hi, lo
+			}
+			if float64(hi)/float64(lo) < 2 {
+				continue
+			}
+			shown++
+			if shown > 10 {
+				continue
+			}
+			fmt.Printf("  pair len %5.1fs   A %s in occ %.1fs   B %s in occ %.1fs\n",
+				fingerprint.FramesToDuration(pr.Len).Seconds(),
+				tl.Time(pr.A).Format("15:04:05"), fingerprint.FramesToDuration(oa.Len).Seconds(),
+				tl.Time(pr.B).Format("15:04:05"), fingerprint.FramesToDuration(ob.Len).Seconds())
+		}
+		fmt.Printf("  total bridge pairs: %d\n", shown)
+	}
+
+	// Ground truth: brute-force the biggest cluster's representative against
+	// the whole timeline, so the cluster count can be checked against it.
+	if len(kept) > 0 {
+		c := kept[0]
+		// Use a full-length occurrence, not the first one, which may be a
+		// truncated reading.
+		rep := c.Occurrences[0]
+		for _, o := range c.Occurrences {
+			if o.Len == c.Len() {
+				rep = o
+				break
+			}
+		}
+		n := rep.Len
+		t4 := time.Now()
+		var found []int
+		nearMiss := 0
+		last := -n
+		for i := 0; i+n <= len(fr); i++ {
+			if i-last < n {
+				continue
+			}
+			if match.Rate(fr[rep.Start:rep.Start+quick], fr[i:i+quick]) < 0.60 {
+				continue
+			}
+			r := match.Rate(fr[rep.Start:rep.Start+n], fr[i:i+n])
+			if r < match.Threshold {
+				if r >= 0.70 {
+					nearMiss++
+				}
+				continue
+			}
+			found = append(found, i)
+			last = i
+		}
+		fmt.Printf("\nground truth for cluster 1 (%.1fs rep at %s):\n",
+			fingerprint.FramesToDuration(n).Seconds(), tl.Time(rep.Start).Format("15:04:05"))
+		fmt.Printf("  brute force found %d airings in %v, cluster reported %d  (near misses 0.70-0.80: %d)\n",
+			len(found), time.Since(t4).Round(time.Second), len(c.Occurrences), nearMiss)
+		have := map[int]bool{}
+		for _, o := range c.Occurrences {
+			have[o.Start] = true
+		}
+		missed := 0
+		for _, f := range found {
+			near := false
+			for _, o := range c.Occurrences {
+				if f > o.Start-quick && f < o.Start+quick {
+					near = true
+				}
+			}
+			if !near {
+				if missed < 8 {
+					fmt.Printf("  missed airing at %s\n", tl.Time(f).Format("15:04:05"))
+				}
+				missed++
+			}
+		}
+		fmt.Printf("  airings the cluster missed: %d\n", missed)
+
+		// Are the missed airings in another cluster, or lost entirely?
+		inOther, lost := 0, 0
+		otherIDs := map[int]int{}
+		for _, f := range found {
+			near := false
+			for _, o := range c.Occurrences {
+				if f > o.Start-quick && f < o.Start+quick {
+					near = true
+				}
+			}
+			if near {
+				continue
+			}
+			where := -1
+			for _, oc := range kept {
+				if oc.ID == c.ID {
+					continue
+				}
+				for _, o := range oc.Occurrences {
+					if f < o.End() && f+n > o.Start {
+						where = oc.ID
+					}
+				}
+			}
+			if where >= 0 {
+				inOther++
+				otherIDs[where]++
+			} else {
+				lost++
+			}
+		}
+		fmt.Printf("  of those: in another cluster %d, not in any cluster %d\n", inOther, lost)
+		if len(otherIDs) > 0 {
+			fmt.Printf("  spread across %d other clusters:\n", len(otherIDs))
+			type kv struct{ id, n int }
+			var kvs []kv
+			for id, cnt := range otherIDs {
+				kvs = append(kvs, kv{id, cnt})
+			}
+			sort.Slice(kvs, func(i, j int) bool { return kvs[i].n > kvs[j].n })
+			for i, e := range kvs {
+				if i >= 5 {
+					break
+				}
+				for _, oc := range kept {
+					if oc.ID == e.id {
+						fmt.Printf("    cluster %d: %d airings there, %dx %.1fs\n",
+							e.id, e.n, len(oc.Occurrences), fingerprint.FramesToDuration(oc.Len()).Seconds())
+					}
+				}
+			}
+		}
+
+		// Do pairs exist between the known airings at all?
+		nearFound := func(pos int) int {
+			for i, f := range found {
+				if pos > f-quick && pos < f+quick {
+					return i
+				}
+			}
+			return -1
+		}
+		linked := map[int]bool{}
+		var both, oneSide int
+		for _, pr := range pairs {
+			ia, ib := nearFound(pr.A), nearFound(pr.B)
+			if ia >= 0 && ib >= 0 {
+				both++
+				linked[ia] = true
+				linked[ib] = true
+			} else if ia >= 0 || ib >= 0 {
+				oneSide++
+			}
+		}
+		fmt.Printf("  pairs joining two known airings: %d\n", both)
+		fmt.Printf("  pairs touching exactly one:      %d\n", oneSide)
+		fmt.Printf("  known airings appearing in any pair: %d of %d\n", len(linked), len(found))
 	}
 
 	var m runtime.MemStats

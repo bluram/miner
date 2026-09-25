@@ -27,13 +27,35 @@ const (
 	KeyBits = Samples * Rows
 )
 
-// Stride is the gap between stored entries. Lookups probe every frame, so
-// only one side of a repeat needs to land on a stride boundary.
+// Stride is the default gap between stored entries. Lookups probe every
+// frame, so only one side of a repeat needs to land on a stride boundary.
 const Stride = 32
 
-// MaxBucket caps how many candidates one key may return. Silence and dead
-// air collapse onto a handful of keys; without a cap those buckets would
-// dominate the run.
+// TargetChances is how many stored entries the shortest fragment should get.
+// The key survives a repeat about a fifth of the time, so a fragment needs
+// many chances for at least one to land; a 3-second fragment at the default
+// stride gets only ten, and occasionally all of them fail.
+const TargetChances = 32
+
+// StrideFor spaces entries so a fragment of minLen frames still gets about
+// TargetChances of them. It never exceeds the default, so longer minimums
+// behave exactly as before.
+func StrideFor(minLen int) int {
+	s := minLen / TargetChances
+	if s > Stride {
+		return Stride
+	}
+	if s < 1 {
+		return 1
+	}
+	return s
+}
+
+// MaxBucket caps how many candidates one key may return, so silence and dead
+// air cannot dominate the run. A fuller bucket is sampled evenly rather than
+// dropped: the keys with the most entries belong to the most repeated audio,
+// and discarding them was losing the links that join an advert's hundredth
+// airing to its first.
 const MaxBucket = 64
 
 // Index maps keys to timeline positions. Entries are key<<32|pos in one
@@ -42,7 +64,11 @@ const MaxBucket = 64
 type Index struct {
 	entries []uint64
 	n       int
+	stride  int
 }
+
+// Stride reports the spacing this index was built with.
+func (ix *Index) Stride() int { return ix.stride }
 
 // Key computes the key at pos, reporting false if it is degenerate.
 // An all-zero key means silence, which matches everything and means nothing.
@@ -60,17 +86,21 @@ func Key(frames []uint16, pos int) (uint32, bool) {
 	return k, k != 0
 }
 
-// Build indexes every Stride-th position.
-func Build(frames []uint16) *Index {
+// Build indexes every stride-th position. A stride below 1 uses the default.
+func Build(frames []uint16, stride int) *Index {
+	if stride < 1 {
+		stride = Stride
+	}
 	last := len(frames) - Span
 	if last < 0 {
-		return &Index{n: len(frames)}
+		return &Index{n: len(frames), stride: stride}
 	}
 	ix := &Index{
-		entries: make([]uint64, 0, last/Stride+1),
+		entries: make([]uint64, 0, last/stride+1),
 		n:       len(frames),
+		stride:  stride,
 	}
-	for pos := 0; pos <= last; pos += Stride {
+	for pos := 0; pos <= last; pos += stride {
 		if k, ok := Key(frames, pos); ok {
 			ix.entries = append(ix.entries, uint64(k)<<32|uint64(uint32(pos)))
 		}
@@ -103,11 +133,33 @@ func (ix *Index) lookupKey(k uint32, dst []int) []int {
 	for j < len(ix.entries) && uint32(ix.entries[j]>>32) == k {
 		j++
 	}
-	if j-i > MaxBucket {
+	n := j - i
+	if n <= MaxBucket {
+		for ; i < j; i++ {
+			dst = append(dst, int(uint32(ix.entries[i])))
+		}
 		return dst
 	}
-	for ; i < j; i++ {
-		dst = append(dst, int(uint32(ix.entries[i])))
+	// Spread the sample across the whole bucket rather than taking a prefix,
+	// so candidates are not all clustered at one end of the period.
+	step := n / MaxBucket
+	for c := 0; c < MaxBucket; c++ {
+		dst = append(dst, int(uint32(ix.entries[i+c*step])))
 	}
 	return dst
+}
+
+// BucketSize reports how many entries share the key at pos, for diagnostics.
+func (ix *Index) BucketSize(frames []uint16, pos int) int {
+	k, ok := Key(frames, pos)
+	if !ok {
+		return 0
+	}
+	lo := uint64(k) << 32
+	i, _ := slices.BinarySearch(ix.entries, lo)
+	j := i
+	for j < len(ix.entries) && uint32(ix.entries[j]>>32) == k {
+		j++
+	}
+	return j - i
 }

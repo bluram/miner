@@ -186,7 +186,9 @@ func searchPairs(tl *timeline.Timeline, minLen, maxLen, quick, step int, rate fl
 
 	fr := tl.Frames
 	report("index", 0, 0)
-	ix := index.Build(fr)
+	// Space entries so even the shortest fragment asked for gets enough
+	// chances to be caught.
+	ix := index.Build(fr, index.StrideFor(minLen))
 
 	last := len(fr) - minLen
 	if last < 0 {

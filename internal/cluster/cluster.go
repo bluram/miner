@@ -10,6 +10,7 @@
 package cluster
 
 import (
+	"math"
 	"sort"
 )
 
@@ -18,10 +19,28 @@ const (
 	// it may join two airings into one cluster.
 	minLinkRatio = 0.7
 
-	// minCover is how much of a cluster a longer one must explain before the
-	// shorter is dropped as a piece of it.
+	// minCover is how much of a cluster a longer one must explain before
+	// Subsume drops the shorter as a piece of it.
 	minCover = 0.8
+
+	// bandRatio is how far two clusters' lengths may differ and still compete
+	// for the same airing. It matches the ratio Group's caller allows between
+	// members of one cluster.
+	bandRatio = 1.5
 )
+
+// lenBand buckets a length so that only clusters of comparable length compete
+// for an airing.
+func lenBand(n int) int {
+	if n < 1 {
+		return 0
+	}
+	return int(math.Log(float64(n)) / math.Log(bandRatio))
+}
+
+func claim(airing, band int) uint64 {
+	return uint64(uint32(airing))<<16 | uint64(uint16(band))
+}
 
 // Pair is one repeat: [A,A+Len) matches [B,B+Len), A < B.
 type Pair struct {
@@ -278,7 +297,12 @@ func Group(pairs []Pair, opt Options) []Cluster {
 		return anchors[a] < anchors[b]
 	})
 
-	taken := make([]bool, len(anchors))
+	// An airing belongs to one cluster per length band, not one cluster full
+	// stop. A position genuinely sits inside both a 12s repeat and the 40s
+	// block containing it, and the spec asks for every occurrence of every
+	// fragment. Claiming it for the first cluster to reach it left the
+	// shorter fragment's own cluster holding a fraction of its airings.
+	taken := make(map[uint64]bool, len(anchors))
 	var groups [][]Occurrence
 	var queue []edge
 	type member struct {
@@ -288,10 +312,11 @@ func Group(pairs []Pair, opt Options) []Cluster {
 	var members []member
 	assigned := 0
 	for _, seed := range order {
-		if taken[seed] || len(adj[seed]) == 0 {
+		band := lenBand(repLen[seed])
+		if taken[claim(seed, band)] || len(adj[seed]) == 0 {
 			continue
 		}
-		taken[seed] = true
+		taken[claim(seed, band)] = true
 		assigned++
 		if opt.Progress != nil {
 			opt.Progress(assigned, len(order))
@@ -301,13 +326,13 @@ func Group(pairs []Pair, opt Options) []Cluster {
 		for len(queue) > 0 {
 			e := queue[0]
 			queue = queue[1:]
-			if taken[e.to] {
+			if taken[claim(e.to, band)] {
 				continue
 			}
 			if same != nil && !same(occ[seed], occ[e.to], e.off) {
 				continue
 			}
-			taken[e.to] = true
+			taken[claim(e.to, band)] = true
 			assigned++
 			members = append(members, member{occ[e.to], e.off})
 			// Offsets compose along the path from the seed.
@@ -368,7 +393,6 @@ func Group(pairs []Pair, opt Options) []Cluster {
 		}
 		out = append(out, Cluster{Occurrences: members})
 	}
-	out = Subsume(out, minCover)
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Occurrences[0].Start < out[j].Occurrences[0].Start
 	})
@@ -379,7 +403,9 @@ func Group(pairs []Pair, opt Options) []Cluster {
 }
 
 // Subsume drops clusters whose occurrences are already explained by a longer
-// cluster.
+// cluster. Group does not apply it: a fragment nested inside a longer one is
+// still a repeat, and the spec asks for all of them. It is kept for callers
+// that want only the outermost reading.
 //
 // A 10-second piece of a 34-second advert repeats exactly as often as the
 // advert does, so it forms a perfectly good cluster of its own. Reporting

@@ -516,3 +516,52 @@ func TestGroupUsesVerifyForPruning(t *testing.T) {
 		}
 	}
 }
+
+// A position inside a 12-second repeat can also be inside the 40-second block
+// containing it. Claiming it for whichever cluster formed first left the
+// shorter fragment's cluster holding a fraction of its own airings.
+func TestGroupLetsClustersOfDifferentLengthShareAnAiring(t *testing.T) {
+	// A short fragment airing at three places, and a long block that contains
+	// two of those same places.
+	var pairs []Pair
+	short := []int{1000, 100000, 200000}
+	for i := 1; i < len(short); i++ {
+		pairs = append(pairs, Pair{A: short[0], B: short[i], Len: 1200})
+	}
+	pairs = append(pairs, Pair{A: short[0], B: short[1], Len: 4200})
+
+	got := Group(pairs, Options{MinOverlap: tol})
+
+	var shortC, longC *Cluster
+	for i := range got {
+		if got[i].Len() <= 1500 {
+			shortC = &got[i]
+		} else {
+			longC = &got[i]
+		}
+	}
+	if shortC == nil {
+		t.Fatalf("the short fragment produced no cluster: %+v", got)
+	}
+	if longC == nil {
+		t.Fatalf("the long block produced no cluster: %+v", got)
+	}
+	if len(shortC.Occurrences) != 3 {
+		t.Errorf("short cluster has %d airings, want all 3: %+v",
+			len(shortC.Occurrences), shortC.Occurrences)
+	}
+}
+
+func TestLenBandSeparatesByRatio(t *testing.T) {
+	// 12s and 40s worth of frames must not compete for the same airing.
+	if lenBand(1291) == lenBand(4300) {
+		t.Error("12s and 40s fell in the same band")
+	}
+	// Two readings of one fragment must.
+	if lenBand(2580) != lenBand(2700) {
+		t.Error("24.0s and 25.1s fell in different bands")
+	}
+	if lenBand(0) != 0 || lenBand(-5) != 0 {
+		t.Error("degenerate lengths should band to 0")
+	}
+}

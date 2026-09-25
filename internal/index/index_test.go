@@ -80,7 +80,7 @@ func TestBuildAndLookupFindsItself(t *testing.T) {
 	for i := range fr {
 		fr[i] = uint16(r.Intn(4095) + 1)
 	}
-	ix := Build(fr)
+	ix := Build(fr, Stride)
 	if ix.Len() == 0 {
 		t.Fatal("index is empty")
 	}
@@ -106,7 +106,7 @@ func TestLookupFindsPlantedCopy(t *testing.T) {
 	const src, dst, n = 1000, 20000, 4000
 	copy(fr[dst:dst+n], fr[src:src+n])
 
-	ix := Build(fr)
+	ix := Build(fr, Stride)
 	// dst is on a stride boundary, so probing the original should reach it.
 	found := false
 	for off := 0; off < Stride*2 && !found; off++ {
@@ -121,29 +121,13 @@ func TestLookupFindsPlantedCopy(t *testing.T) {
 	}
 }
 
-func TestLookupDropsHugeBuckets(t *testing.T) {
-	// The same 91 frames repeated: one key, thousands of positions.
-	block := make([]uint16, Span)
-	for i := range block {
-		block[i] = 0xE00 | uint16(i%8)
-	}
-	fr := make([]uint16, 0, Span*400)
-	for i := 0; i < 400; i++ {
-		fr = append(fr, block...)
-	}
-	ix := Build(fr)
-	if got := ix.Lookup(fr, 0, nil); len(got) != 0 {
-		t.Errorf("returned %d candidates from a saturated key, want 0", len(got))
-	}
-}
-
 func TestLookupMissReturnsNothing(t *testing.T) {
 	r := rand.New(rand.NewSource(5))
 	fr := make([]uint16, 5000)
 	for i := range fr {
 		fr[i] = uint16(r.Intn(4095) + 1)
 	}
-	ix := Build(fr)
+	ix := Build(fr, Stride)
 	other := make([]uint16, Span)
 	for i := range other {
 		other[i] = uint16(r.Intn(4095) + 1)
@@ -154,7 +138,7 @@ func TestLookupMissReturnsNothing(t *testing.T) {
 }
 
 func TestBuildTooShort(t *testing.T) {
-	ix := Build(make([]uint16, Span-1))
+	ix := Build(make([]uint16, Span-1), Stride)
 	if ix.Len() != 0 {
 		t.Errorf("short input produced %d entries", ix.Len())
 	}
@@ -175,7 +159,7 @@ func TestRealDayIndexIsSelective(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ix := Build(tl.Frames)
+	ix := Build(tl.Frames, Stride)
 
 	wantEntries := len(tl.Frames) / Stride
 	if ix.Len() < wantEntries/2 {
@@ -207,4 +191,82 @@ func contains(xs []int, v int) bool {
 		}
 	}
 	return false
+}
+
+// A key with more entries than MaxBucket belongs to the most repeated audio.
+// Dropping it loses exactly the links that join a fragment's later airings to
+// its first, so the bucket is sampled instead.
+func TestLookupSamplesSaturatedBucket(t *testing.T) {
+	block := make([]uint16, Span)
+	for i := range block {
+		block[i] = 0xE00 | uint16(i%8)
+	}
+	fr := make([]uint16, 0, Span*400)
+	for i := 0; i < 400; i++ {
+		fr = append(fr, block...)
+	}
+	ix := Build(fr, Stride)
+	got := ix.Lookup(fr, 0, nil)
+	if len(got) == 0 {
+		t.Fatal("saturated key returned nothing; the repeats it links are lost")
+	}
+	if len(got) > MaxBucket {
+		t.Errorf("returned %d candidates, above the %d cap", len(got), MaxBucket)
+	}
+	// The sample must span the bucket, not sit at one end.
+	lo, hi := got[0], got[0]
+	for _, p := range got {
+		lo, hi = min(lo, p), max(hi, p)
+	}
+	if hi-lo < len(fr)/2 {
+		t.Errorf("sample spans %d of %d frames; it is bunched at one end", hi-lo, len(fr))
+	}
+}
+
+// A short fragment gets far fewer chances to be caught than a long one, so
+// the spacing has to follow the shortest length asked for. Six-second adverts
+// were being missed outright at the fixed stride.
+func TestStrideForShortFragments(t *testing.T) {
+	const fps = 108
+	for _, tc := range []struct {
+		sec        int
+		wantAtMost int
+	}{
+		{30, Stride},
+		{10, Stride},
+		{5, 20},
+		{3, 12},
+	} {
+		got := StrideFor(tc.sec * fps)
+		if got > tc.wantAtMost {
+			t.Errorf("StrideFor(%ds) = %d, want at most %d", tc.sec, got, tc.wantAtMost)
+		}
+		if got < 1 {
+			t.Errorf("StrideFor(%ds) = %d, must be at least 1", tc.sec, got)
+		}
+		// Whatever the spacing, a fragment must get a useful number of tries.
+		if chances := tc.sec * fps / got; chances < TargetChances-1 {
+			t.Errorf("a %ds fragment gets only %d chances", tc.sec, chances)
+		}
+	}
+	if StrideFor(0) < 1 || StrideFor(-5) < 1 {
+		t.Error("degenerate lengths must still give a usable stride")
+	}
+}
+
+func TestBuildDefaultsStride(t *testing.T) {
+	fr := make([]uint16, 5000)
+	for i := range fr {
+		fr[i] = uint16(i%4095 + 1)
+	}
+	if got := Build(fr, 0).Stride(); got != Stride {
+		t.Errorf("stride %d for a zero argument, want the default %d", got, Stride)
+	}
+	if got := Build(fr, 8).Stride(); got != 8 {
+		t.Errorf("stride %d, want 8", got)
+	}
+	// A denser index holds more entries.
+	if a, b := Build(fr, 32).Len(), Build(fr, 8).Len(); b <= a {
+		t.Errorf("stride 8 gave %d entries, stride 32 gave %d", b, a)
+	}
 }

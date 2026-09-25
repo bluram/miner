@@ -41,7 +41,7 @@ func main() {
 	}
 	fr := tl.Frames
 	fmt.Printf("timeline  %d frames (%v)\n", len(fr), fingerprint.FramesToDuration(len(fr)).Round(time.Minute))
-	ix := index.Build(fr)
+	ix := index.Build(fr, index.Stride)
 	fmt.Printf("index     %d entries, %.0f MB\n", ix.Len(), float64(ix.Bytes())/1e6)
 
 	fps := fingerprint.DurationToFrames(time.Second)
